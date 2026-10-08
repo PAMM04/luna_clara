@@ -13,10 +13,16 @@ CREATE TABLE IF NOT EXISTS public.productos (
     precio NUMERIC(10, 2) NOT NULL,
     tallas TEXT[] NOT NULL DEFAULT '{}',
     colores TEXT[] NOT NULL DEFAULT '{}',
+    variantes JSONB NOT NULL DEFAULT '[]'::jsonb,
     cantidad_disponible INT NOT NULL DEFAULT 0,
     disponible BOOLEAN NOT NULL DEFAULT true,
     imagen_url TEXT NOT NULL
 );
+
+-- Si la tabla ya fue creada previamente, ejecuta esta línea para habilitar variantes con foto:
+ALTER TABLE public.productos 
+ADD COLUMN IF NOT EXISTS variantes JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 
 -- 2. HABILITAR ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.productos ENABLE ROW LEVEL SECURITY;

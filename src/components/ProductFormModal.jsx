@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { createProduct, updateProduct } from '../lib/supabase';
-import { X, Upload, Plus, Trash2, Check, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import { createProduct, updateProduct, normalizeProductVariants } from '../lib/supabase';
+import { 
+  X, Upload, Plus, Trash2, Check, AlertCircle, 
+  Camera, Image as ImageIcon, Star 
+} from 'lucide-react';
+
 
 const COMMON_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Única'];
-const COMMON_COLORS = ['Negro', 'Blanco', 'Beige', 'Champagne', 'Crema', 'Rosa', 'Azul', 'Terracota', 'Verde'];
+const SUGGESTED_COLORS = [
+  'Rosa', 'Negro', 'Blanco', 'Beige', 'Champagne', 
+  'Crema', 'Azul', 'Verde', 'Terracota', 'Rojo', 'Gris'
+];
 
 export default function ProductFormModal({ product, onClose, onSaveSuccess, addToast }) {
   const isEditing = Boolean(product && product.id);
 
-  // Estados del formulario
+  // Estados generales del formulario
   const [nombre, setNombre] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [precio, setPrecio] = useState('');
@@ -16,14 +23,17 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
   const [disponible, setDisponible] = useState(true);
   const [tallas, setTallas] = useState(['S', 'M', 'L']);
   const [customSizeInput, setCustomSizeInput] = useState('');
-  const [colores, setColores] = useState(['Negro', 'Beige']);
+
+  // Estados de variantes por color
+  // Cada variante: { id: string, color: string, imagen_url: string, file: File|null, previewUrl: string, isCover: boolean, isUrlMode?: boolean }
+  const [variantes, setVariantes] = useState([]);
   const [customColorInput, setCustomColorInput] = useState('');
-  
-  // Imagen
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState('');
-  const [imageUrlInput, setImageUrlInput] = useState('');
-  const [isUrlMode, setIsUrlMode] = useState(false);
+
+  // Fotografía de portada general opcional (si se quiere una foto de grupo/modelo aparte)
+  const [coverFile, setCoverFile] = useState(null);
+  const [coverPreview, setCoverPreview] = useState('');
+  const [coverUrlInput, setCoverUrlInput] = useState('');
+  const [showCoverSection, setShowCoverSection] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
@@ -36,43 +46,62 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
       setCantidadDisponible(product.cantidad_disponible !== undefined ? product.cantidad_disponible : 1);
       setDisponible(product.disponible !== undefined ? product.disponible : true);
       setTallas(Array.isArray(product.tallas) ? [...product.tallas] : []);
-      setColores(Array.isArray(product.colores) ? [...product.colores] : []);
-      setImagePreview(product.imagen_url || '');
-      setImageUrlInput(product.imagen_url || '');
+
+      // Cargar variantes normalizadas
+      const normVariants = normalizeProductVariants(product);
+      if (normVariants && normVariants.length > 0) {
+        setVariantes(normVariants.map((v, idx) => ({
+          id: v.id || `var-${idx}-${Date.now()}`,
+          color: v.color || 'Color',
+          imagen_url: v.imagen_url || '',
+          file: null,
+          previewUrl: v.imagen_url || '',
+          isCover: idx === 0,
+          isUrlMode: false
+        })));
+      } else {
+        setVariantes([{
+          id: `var-0-${Date.now()}`,
+          color: 'Único',
+          imagen_url: product.imagen_url || '',
+          file: null,
+          previewUrl: product.imagen_url || '',
+          isCover: true,
+          isUrlMode: false
+        }]);
+      }
+
+      setCoverPreview(product.imagen_url || '');
+      setCoverUrlInput(product.imagen_url || '');
     } else {
-      // Valores por defecto para nueva prenda
+      // Valores iniciales para creación de nueva prenda
       setNombre('');
       setDescripcion('');
       setPrecio('');
       setCantidadDisponible(5);
       setDisponible(true);
       setTallas(['S', 'M', 'L']);
-      setColores(['Negro']);
-      setImageFile(null);
-      setImagePreview('');
-      setImageUrlInput('');
+      
+      // Una primera variante lista para capturar foto en móvil
+      setVariantes([
+        {
+          id: `var-init-${Date.now()}`,
+          color: 'Rosa',
+          imagen_url: '',
+          file: null,
+          previewUrl: '',
+          isCover: true,
+          isUrlMode: false
+        }
+      ]);
+      setCoverFile(null);
+      setCoverPreview('');
+      setCoverUrlInput('');
+      setShowCoverSection(false);
     }
   }, [product]);
 
-  // Manejador de selección de archivo de imagen
-  const handleImageFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        addToast({
-          type: 'error',
-          title: 'Archivo no válido',
-          message: 'Por favor selecciona un archivo de imagen (JPG, PNG, WebP).'
-        });
-        return;
-      }
-      setImageFile(file);
-      const previewUrl = URL.createObjectURL(file);
-      setImagePreview(previewUrl);
-    }
-  };
-
-  // Toggle de Tallas
+  // Manejo de Tallas
   const toggleSize = (size) => {
     if (tallas.includes(size)) {
       setTallas(tallas.filter((s) => s !== size));
@@ -89,42 +118,174 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
     }
   };
 
-  const removeSize = (sizeToRemove) => {
-    setTallas(tallas.filter((s) => s !== sizeToRemove));
+  // Manejo de Variantes
+
+  const addVariant = (colorName) => {
+    const cleanName = colorName.trim();
+    if (!cleanName) return;
+
+    // Verificar si ya existe este color
+    const exists = variantes.some((v) => v.color.toLowerCase() === cleanName.toLowerCase());
+    if (exists) {
+      addToast({
+        type: 'info',
+        title: 'Variante ya agregada',
+        message: `El color "${cleanName}" ya está en la lista de variantes.`
+      });
+      return;
+    }
+
+    const newVar = {
+      id: `var-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      color: cleanName,
+      imagen_url: '',
+      file: null,
+      previewUrl: '',
+      isCover: variantes.length === 0,
+      isUrlMode: false
+    };
+
+    setVariantes((prev) => [...prev, newVar]);
   };
 
-  // Toggle de Colores
-  const toggleColor = (color) => {
-    if (colores.includes(color)) {
-      setColores(colores.filter((c) => c !== color));
-    } else {
-      setColores([...colores, color]);
+  const removeVariant = (id) => {
+    if (variantes.length <= 1) {
+      addToast({
+        type: 'warning',
+        title: 'Al menos una variante',
+        message: 'La prenda debe tener al menos una variante de color.'
+      });
+      return;
+    }
+    const filtered = variantes.filter((v) => v.id !== id);
+    // Si eliminamos la que era portada, asignar la primera como portada
+    if (filtered.length > 0 && !filtered.some((v) => v.isCover)) {
+      filtered[0].isCover = true;
+    }
+    setVariantes(filtered);
+  };
+
+  const setVariantAsCover = (id) => {
+    setVariantes((prev) =>
+      prev.map((v) => ({
+        ...v,
+        isCover: v.id === id
+      }))
+    );
+    // Actualizar preview de portada
+    const target = variantes.find((v) => v.id === id);
+    if (target && target.previewUrl) {
+      setCoverPreview(target.previewUrl);
     }
   };
 
-  const handleAddCustomColor = (e) => {
-    e.preventDefault();
-    if (customColorInput.trim() && !colores.includes(customColorInput.trim())) {
-      setColores([...colores, customColorInput.trim()]);
-      setCustomColorInput('');
+  const updateVariantColorName = (id, newColor) => {
+    setVariantes((prev) =>
+      prev.map((v) => (v.id === id ? { ...v, color: newColor } : v))
+    );
+  };
+
+  // Asignar archivo desde cámara o galería a una variante específica
+  const handleVariantFileChange = (variantId, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      addToast({
+        type: 'error',
+        title: 'Formato no soportado',
+        message: 'Por favor selecciona una imagen válida (JPG, PNG, WebP).'
+      });
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setVariantes((prev) =>
+      prev.map((v) => {
+        if (v.id === variantId) {
+          return {
+            ...v,
+            file,
+            previewUrl,
+            imagen_url: previewUrl
+          };
+        }
+        return v;
+      })
+    );
+
+    // Si es la portada o la primera, actualizar preview de portada
+    const target = variantes.find((v) => v.id === variantId);
+    if (target?.isCover || variantes[0]?.id === variantId) {
+      setCoverPreview(previewUrl);
     }
   };
 
-  const removeColor = (colorToRemove) => {
-    setColores(colores.filter((c) => c !== colorToRemove));
+  // Quitar foto de una variante
+  const clearVariantPhoto = (variantId) => {
+    setVariantes((prev) =>
+      prev.map((v) => {
+        if (v.id === variantId) {
+          return {
+            ...v,
+            file: null,
+            previewUrl: '',
+            imagen_url: ''
+          };
+        }
+        return v;
+      })
+    );
   };
 
-  // Validación y envío
+  // Actualizar URL directa de una variante
+  const updateVariantUrl = (variantId, url) => {
+    setVariantes((prev) =>
+      prev.map((v) => {
+        if (v.id === variantId) {
+          return {
+            ...v,
+            file: null,
+            previewUrl: url,
+            imagen_url: url
+          };
+        }
+        return v;
+      })
+    );
+  };
+
+  // Portada general opcional
+  const handleCoverFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setCoverFile(file);
+      setCoverPreview(URL.createObjectURL(file));
+    }
+  };
+
+  // Validación y guardado
   const handleSubmit = async (e) => {
     e.preventDefault();
     const newErrors = {};
 
     if (!nombre.trim()) newErrors.nombre = 'El nombre de la prenda es obligatorio.';
     if (!precio || isNaN(Number(precio)) || Number(precio) <= 0) {
-      newErrors.precio = 'Ingresa un precio válido mayor a 0.';
+      newErrors.precio = 'Ingresa un precio válido en Bs. mayor a 0.';
     }
-    if (!imagePreview && !imageFile && !imageUrlInput.trim()) {
-      newErrors.imagen = 'Debes subir o asignar una fotografía a la prenda.';
+    if (variantes.length === 0) {
+      newErrors.variantes = 'Debes tener al menos un color o variante.';
+    }
+
+    // Verificar si hay al menos una imagen (en alguna variante o en la portada)
+    const hasAnyImage = 
+      coverPreview || 
+      coverFile || 
+      coverUrlInput.trim() || 
+      variantes.some((v) => v.previewUrl || v.imagen_url || v.file);
+
+    if (!hasAnyImage) {
+      newErrors.imagen = 'Debes tomar o subir al menos una fotografía (para una variante o como portada).';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -132,13 +293,20 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
       addToast({
         type: 'warning',
         title: 'Campos requeridos',
-        message: 'Por favor completa todos los campos obligatorios del formulario.'
+        message: Object.values(newErrors)[0]
       });
       return;
     }
 
     setSaving(true);
     try {
+      // Ordenar las variantes para que la designada como Portada quede primera
+      const sortedVariants = [...variantes].sort((a, b) => {
+        if (a.isCover) return -1;
+        if (b.isCover) return 1;
+        return 0;
+      });
+
       const payload = {
         nombre: nombre.trim(),
         descripcion: descripcion.trim(),
@@ -146,35 +314,36 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
         cantidad_disponible: parseInt(cantidadDisponible, 10) || 0,
         disponible,
         tallas,
-        colores,
-        imagen_url: isUrlMode ? imageUrlInput.trim() : (imagePreview.startsWith('http') ? imagePreview : '')
+        colores: sortedVariants.map((v) => v.color.trim()).filter(Boolean),
+        variantes: sortedVariants,
+        imagen_url: coverPreview || ''
       };
 
       let result;
       if (isEditing) {
-        result = await updateProduct(product.id, payload, isUrlMode ? null : imageFile);
+        result = await updateProduct(product.id, payload, coverFile);
         addToast({
           type: 'success',
           title: 'Prenda actualizada',
-          message: `Se han guardado los cambios para "${nombre}".`
+          message: `Se guardaron las variantes y fotos de "${nombre}".`
         });
       } else {
-        result = await createProduct(payload, isUrlMode ? null : imageFile);
+        result = await createProduct(payload, coverFile);
         addToast({
           type: 'success',
           title: 'Prenda publicada',
-          message: `"${nombre}" ha sido agregada exitosamente al catálogo.`
+          message: `"${nombre}" fue añadida con éxito con ${sortedVariants.length} variante(s).`
         });
       }
 
       onSaveSuccess(result);
       onClose();
     } catch (err) {
-      console.error('Error saving product:', err);
+      console.error('Error saving product with variants:', err);
       addToast({
         type: 'error',
         title: 'Error al guardar',
-        message: err.message || 'No se pudo guardar la prenda. Verifica la conexión con Supabase.'
+        message: err.message || 'No se pudo guardar la prenda. Verifica la conexión.'
       });
     } finally {
       setSaving(false);
@@ -186,7 +355,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
       <div 
         className="modal-content" 
         onClick={(e) => e.stopPropagation()} 
-        style={{ maxWidth: '680px', maxHeight: '92vh' }}
+        style={{ maxWidth: '720px', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
       >
         {/* Cabecera del modal */}
         <div style={{
@@ -198,14 +367,14 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
           position: 'sticky',
           top: 0,
           background: 'var(--color-white)',
-          zIndex: 5
+          zIndex: 10
         }}>
           <div>
-            <h2 style={{ fontSize: '1.35rem', fontWeight: 700, fontFamily: 'var(--font-serif)', color: 'var(--color-noir)' }}>
-              {isEditing ? 'Editar Prenda' : 'Nueva Prenda para el Catálogo'}
+            <h2 style={{ fontSize: '1.35rem', fontWeight: 700, fontFamily: 'var(--font-serif)', color: 'var(--color-noir)', margin: 0 }}>
+              {isEditing ? 'Editar Prenda y Variantes' : 'Nueva Prenda para el Catálogo'}
             </h2>
-            <p style={{ fontSize: '0.8rem', color: 'var(--color-muted)' }}>
-              {isEditing ? 'Modifica los datos o sustituye la fotografía' : 'Ingresa la información para mostrar en la vitrina'}
+            <p style={{ fontSize: '0.8rem', color: 'var(--color-muted)', margin: '0.2rem 0 0' }}>
+              Optimizado para móvil: asigna una fotografía por color sin repetir datos.
             </p>
           </div>
 
@@ -218,15 +387,16 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
               cursor: 'pointer',
               padding: '0.25rem'
             }}
+            title="Cerrar ventana"
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Contenido / Formulario */}
-        <form onSubmit={handleSubmit} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Contenido / Formulario con Scroll */}
+        <form onSubmit={handleSubmit} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.4rem', overflowY: 'auto' }}>
           
-          {/* Nombre */}
+          {/* 1. Nombre de la prenda */}
           <div>
             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.4rem' }}>
               Nombre de la Prenda *
@@ -238,18 +408,18 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                 setNombre(e.target.value);
                 if (errors.nombre) setErrors({ ...errors, nombre: null });
               }}
-              placeholder="Ej: Vestido Midi Seda Champagne"
+              placeholder="Ej: Pijama de Mujer 3 piezas"
               className="input-field"
               required
             />
             {errors.nombre && <div style={{ color: 'var(--status-soldout)', fontSize: '0.78rem', marginTop: '0.25rem' }}>{errors.nombre}</div>}
           </div>
 
-          {/* Precio y Stock */}
+          {/* 2. Precio en Bolivianos y Stock Total */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.4rem' }}>
-                Precio (Bs.) *
+                Precio en Bolivianos (Bs.) *
               </label>
               <input
                 type="number"
@@ -260,7 +430,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                   setPrecio(e.target.value);
                   if (errors.precio) setErrors({ ...errors, precio: null });
                 }}
-                placeholder="Ej: 180.00"
+                placeholder="Ej: 60.00"
                 className="input-field"
                 required
               />
@@ -269,7 +439,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
 
             <div>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.4rem' }}>
-                Cantidad en Stock
+                Cantidad en Stock Total
               </label>
               <input
                 type="number"
@@ -282,59 +452,12 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
             </div>
           </div>
 
-          {/* Switch rápido de Disponibilidad */}
-          <div style={{
-            background: 'var(--color-cream)',
-            padding: '0.85rem 1rem',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--color-sand)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}>
-            <div>
-              <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-noir)' }}>
-                Disponible para Venta
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--color-muted)' }}>
-                {disponible ? 'Aparece como Disponible con botón de WhatsApp activo' : 'Aparece como "Agotado" en la vitrina'}
-              </div>
-            </div>
-
-            <label className="switch-label">
-              <input
-                type="checkbox"
-                checked={disponible}
-                onChange={(e) => setDisponible(e.target.checked)}
-                style={{ display: 'none' }}
-              />
-              <div className={`switch-track ${disponible ? 'active' : ''}`}>
-                <div className="switch-thumb" />
-              </div>
-            </label>
-          </div>
-
-          {/* Descripción */}
+          {/* 3. Tallas Disponibles (Multi-selector táctil) */}
           <div>
             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.4rem' }}>
-              Descripción / Confección y Cuidados
+              Tallas Disponibles para este modelo
             </label>
-            <textarea
-              rows={3}
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              placeholder="Detalla el tipo de tela, escote, ocasión o recomendaciones de lavado..."
-              className="input-field"
-              style={{ resize: 'vertical' }}
-            />
-          </div>
-
-          {/* Selector de Tallas */}
-          <div>
-            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.4rem' }}>
-              Tallas Disponibles
-            </label>
-            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
               {COMMON_SIZES.map((size) => {
                 const isSelected = tallas.includes(size);
                 return (
@@ -343,14 +466,15 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                     type="button"
                     onClick={() => toggleSize(size)}
                     style={{
-                      padding: '0.35rem 0.75rem',
+                      padding: '0.45rem 0.85rem',
                       borderRadius: 'var(--radius-sm)',
                       border: isSelected ? '2px solid var(--gold-primary)' : '1px solid var(--color-sand)',
                       background: isSelected ? 'var(--gold-subtle)' : 'var(--color-white)',
                       color: isSelected ? 'var(--gold-dark)' : 'var(--color-charcoal)',
                       fontWeight: isSelected ? 700 : 500,
                       cursor: 'pointer',
-                      fontSize: '0.82rem'
+                      fontSize: '0.85rem',
+                      transition: 'all 0.15s ease'
                     }}
                   >
                     {size}
@@ -359,7 +483,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
               })}
             </div>
 
-            {/* Tallas personalizadas */}
+            {/* Agregar talla personalizada */}
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input
                 type="text"
@@ -385,248 +509,488 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                 <span>Agregar</span>
               </button>
             </div>
-
-            {/* Tags seleccionados */}
-            {tallas.length > 0 && (
-              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-                {tallas.map((t) => (
-                  <span
-                    key={t}
-                    style={{
-                      background: 'var(--color-noir)',
-                      color: 'var(--color-ivory)',
-                      padding: '0.2rem 0.6rem',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem'
-                    }}
-                  >
-                    <span>{t}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeSize(t)}
-                      style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 0 }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
 
-          {/* Selector de Colores */}
-          <div>
-            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.4rem' }}>
-              Colores Disponibles
-            </label>
-            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
-              {COMMON_COLORS.map((col) => {
-                const isSelected = colores.includes(col);
+          {/* ============================================================== */}
+          {/* 4. SECCIÓN PRINCIPAL: VARIANTES POR COLOR Y FOTOGRAFÍAS */}
+          {/* ============================================================== */}
+          <div style={{
+            background: 'var(--color-cream)',
+            border: '1px solid var(--color-sand)',
+            borderRadius: 'var(--radius-md)',
+            padding: '1.25rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Camera size={18} color="var(--gold-primary)" />
+                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-noir)' }}>
+                  Variantes de Color y Fotografías *
+                </span>
+              </div>
+              <span style={{ fontSize: '0.74rem', color: 'var(--gold-dark)', fontWeight: 600 }}>
+                {variantes.length} variante(s) configurada(s)
+              </span>
+            </div>
+            
+            <p style={{ fontSize: '0.78rem', color: 'var(--color-muted)', marginBottom: '0.9rem', lineHeight: 1.4 }}>
+              Asocia una foto a cada color disponible. En la tienda, la imagen cambiará automáticamente cuando el cliente elija el color.
+            </p>
+
+            {/* Chips de adición rápida de colores sugeridos */}
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.35rem' }}>
+                Toca para añadir un color rápidamente:
+              </div>
+              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                {SUGGESTED_COLORS.map((col) => {
+                  const alreadyAdded = variantes.some((v) => v.color.toLowerCase() === col.toLowerCase());
+                  return (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => addVariant(col)}
+                      style={{
+                        padding: '0.3rem 0.65rem',
+                        borderRadius: 'var(--radius-sm)',
+                        border: alreadyAdded ? '1px solid var(--gold-primary)' : '1px solid var(--color-sand)',
+                        background: alreadyAdded ? 'rgba(197, 160, 89, 0.15)' : 'var(--color-white)',
+                        color: alreadyAdded ? 'var(--gold-dark)' : 'var(--color-charcoal)',
+                        fontSize: '0.76rem',
+                        fontWeight: alreadyAdded ? 700 : 500,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                    >
+                      {alreadyAdded && <Check size={12} />}
+                      <span>{col}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Input para color personalizado */}
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <input
+                  type="text"
+                  value={customColorInput}
+                  onChange={(e) => setCustomColorInput(e.target.value)}
+                  placeholder="Escribe otro color (ej. Verde Menta, Rosa Viejo)..."
+                  className="input-field"
+                  style={{ padding: '0.45rem 0.75rem', fontSize: '0.82rem' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (customColorInput.trim()) {
+                        addVariant(customColorInput);
+                        setCustomColorInput('');
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customColorInput.trim()) {
+                      addVariant(customColorInput);
+                      setCustomColorInput('');
+                    }
+                  }}
+                  className="btn btn-outline"
+                  style={{ padding: '0.45rem 0.85rem', fontSize: '0.82rem', whiteSpace: 'nowrap' }}
+                >
+                  <Plus size={15} />
+                  <span>Añadir</span>
+                </button>
+              </div>
+            </div>
+
+            {errors.imagen && (
+              <div style={{ 
+                color: 'var(--status-soldout)', 
+                fontSize: '0.78rem', 
+                marginBottom: '0.75rem',
+                padding: '0.5rem',
+                background: 'var(--status-soldout-bg)',
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}>
+                <AlertCircle size={15} />
+                <span>{errors.imagen}</span>
+              </div>
+            )}
+
+            {/* LISTA DE TARJETAS DE VARIANTES (Mobile-First Touch Cards) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {variantes.map((v, index) => {
+                const isCover = v.isCover || index === 0;
+                const hasPhoto = Boolean(v.previewUrl || v.imagen_url);
+
                 return (
-                  <button
-                    key={col}
-                    type="button"
-                    onClick={() => toggleColor(col)}
+                  <div
+                    key={v.id}
                     style={{
-                      padding: '0.35rem 0.75rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: isSelected ? '2px solid var(--gold-primary)' : '1px solid var(--color-sand)',
-                      background: isSelected ? 'var(--gold-subtle)' : 'var(--color-white)',
-                      color: isSelected ? 'var(--gold-dark)' : 'var(--color-charcoal)',
-                      fontWeight: isSelected ? 700 : 500,
-                      cursor: 'pointer',
-                      fontSize: '0.82rem'
+                      background: 'var(--color-white)',
+                      border: isCover ? '2px solid var(--gold-primary)' : '1px solid var(--color-sand)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '0.85rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.65rem',
+                      boxShadow: 'var(--shadow-sm)',
+                      position: 'relative'
                     }}
                   >
-                    {col}
-                  </button>
+                    {/* Barra superior de la variante */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 200px' }}>
+                        <div style={{
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
+                          background: 'var(--gold-primary)',
+                          boxShadow: '0 0 0 2px rgba(197, 160, 89, 0.2)'
+                        }} />
+                        <input
+                          type="text"
+                          value={v.color}
+                          onChange={(e) => updateVariantColorName(v.id, e.target.value)}
+                          placeholder="Nombre del color..."
+                          style={{
+                            fontWeight: 700,
+                            fontSize: '0.92rem',
+                            color: 'var(--color-noir)',
+                            border: '1px solid transparent',
+                            background: 'transparent',
+                            padding: '0.2rem 0.4rem',
+                            borderRadius: 'var(--radius-sm)',
+                            outline: 'none',
+                            maxWidth: '180px'
+                          }}
+                          onFocus={(e) => e.target.style.border = '1px solid var(--color-sand)'}
+                          onBlur={(e) => e.target.style.border = '1px solid transparent'}
+                        />
+                        {isCover && (
+                          <span style={{
+                            background: 'var(--color-noir)',
+                            color: 'var(--gold-light)',
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '999px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}>
+                            <Star size={10} fill="var(--gold-light)" />
+                            <span>Portada</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        {!isCover && (
+                          <button
+                            type="button"
+                            onClick={() => setVariantAsCover(v.id)}
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid var(--color-sand)',
+                              color: 'var(--color-muted)',
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: '0.72rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}
+                            title="Usar esta variante como foto principal del catálogo"
+                          >
+                            <Star size={11} />
+                            <span>Hacer Portada</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => removeVariant(v.id)}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            border: '1px solid rgba(239, 68, 68, 0.2)',
+                            color: '#EF4444',
+                            cursor: 'pointer',
+                            padding: '0.3rem',
+                            borderRadius: 'var(--radius-sm)',
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}
+                          title="Eliminar esta variante"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Zona de Fotografía de la Variante (Optimizado para Cámara / Galería en Celular) */}
+                    <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {hasPhoto ? (
+                        <>
+                          {/* Miniatura de la foto asignada */}
+                          <div style={{
+                            width: '75px',
+                            height: '90px',
+                            borderRadius: 'var(--radius-sm)',
+                            overflow: 'hidden',
+                            border: '1px solid var(--color-sand)',
+                            background: '#F5F2EB',
+                            flexShrink: 0,
+                            position: 'relative'
+                          }}>
+                            <img
+                              src={v.previewUrl || v.imagen_url}
+                              alt={`Variante ${v.color}`}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1 }}>
+                            <div style={{ fontSize: '0.78rem', color: '#065F46', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <Check size={14} />
+                              <span>Foto lista para {v.color}</span>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              {/* Botón táctil para cambiar foto */}
+                              <label style={{
+                                background: 'var(--color-cream)',
+                                border: '1px solid var(--color-sand)',
+                                color: 'var(--color-charcoal)',
+                                padding: '0.4rem 0.75rem',
+                                borderRadius: 'var(--radius-sm)',
+                                fontSize: '0.78rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem'
+                              }}>
+                                <Camera size={14} color="var(--gold-primary)" />
+                                <span>Cambiar foto</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  style={{ display: 'none' }}
+                                  onChange={(e) => handleVariantFileChange(v.id, e)}
+                                />
+                              </label>
+
+                              {/* Quitar foto */}
+                              <button
+                                type="button"
+                                onClick={() => clearVariantPhoto(v.id)}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: 'var(--color-muted)',
+                                  fontSize: '0.75rem',
+                                  cursor: 'pointer',
+                                  textDecoration: 'underline'
+                                }}
+                              >
+                                Quitar foto
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        /* Botón táctil grande para tomar foto con celular o elegir de galería */
+                        <div style={{ width: '100%' }}>
+                          <label style={{
+                            border: '2px dashed var(--color-sand)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '0.85rem 1rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.6rem',
+                            cursor: 'pointer',
+                            background: 'rgba(247, 245, 240, 0.6)',
+                            transition: 'all 0.15s ease'
+                          }}>
+                            <Camera size={20} color="var(--gold-primary)" />
+                            <div style={{ textAlign: 'left' }}>
+                              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-noir)' }}>
+                                Tomar foto o elegir de galería para "{v.color}"
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--color-muted)' }}>
+                                Toca aquí con tu celular para abrir cámara o fotos
+                              </div>
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              style={{ display: 'none' }}
+                              onChange={(e) => handleVariantFileChange(v.id, e)}
+                            />
+                          </label>
+
+                          {/* Alternativa: Enlace directo URL */}
+                          <div style={{ marginTop: '0.35rem', textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVariantes((prev) =>
+                                  prev.map((item) => (item.id === v.id ? { ...item, isUrlMode: !item.isUrlMode } : item))
+                                );
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--gold-dark)',
+                                fontSize: '0.72rem',
+                                cursor: 'pointer',
+                                textDecoration: 'underline'
+                              }}
+                            >
+                              {v.isUrlMode ? 'Cerrar entrada de URL' : 'O pegar enlace directo URL'}
+                            </button>
+                          </div>
+
+                          {v.isUrlMode && (
+                            <div style={{ marginTop: '0.35rem' }}>
+                              <input
+                                type="url"
+                                placeholder="https://ejemplo.com/foto.jpg"
+                                className="input-field"
+                                style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}
+                                value={v.imagen_url || ''}
+                                onChange={(e) => updateVariantUrl(v.id, e.target.value)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
             </div>
 
-            {/* Color personalizado */}
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input
-                type="text"
-                value={customColorInput}
-                onChange={(e) => setCustomColorInput(e.target.value)}
-                placeholder="Otro color (ej. Azul Marino)..."
-                className="input-field"
-                style={{ padding: '0.45rem 0.75rem', fontSize: '0.82rem' }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddCustomColor(e);
-                  }
-                }}
-              />
-              <button
-                type="button"
-                onClick={handleAddCustomColor}
-                className="btn btn-outline"
-                style={{ padding: '0.45rem 0.85rem', fontSize: '0.82rem' }}
-              >
-                <Plus size={15} />
-                <span>Agregar</span>
-              </button>
-            </div>
+            {/* Botón grande para añadir otro color */}
+            <button
+              type="button"
+              onClick={() => addVariant(`Color ${variantes.length + 1}`)}
+              style={{
+                marginTop: '0.85rem',
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px dashed var(--gold-primary)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(255, 255, 255, 0.8)',
+                color: 'var(--gold-dark)',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem'
+              }}
+            >
+              <Plus size={16} />
+              <span>Añadir otra variante de color</span>
+            </button>
+          </div>
 
-            {/* Tags seleccionados */}
-            {colores.length > 0 && (
-              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-                {colores.map((c) => (
-                  <span
-                    key={c}
-                    style={{
-                      background: 'var(--color-cream)',
-                      border: '1px solid var(--color-sand)',
-                      color: 'var(--color-charcoal)',
-                      padding: '0.2rem 0.6rem',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem'
-                    }}
-                  >
-                    <span>{c}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeColor(c)}
-                      style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 0 }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
+          {/* 5. Fotografía de Portada General (Acordeón Opcional) */}
+          <div style={{ borderTop: '1px solid var(--color-sand)', paddingTop: '0.75rem' }}>
+            <button
+              type="button"
+              onClick={() => setShowCoverSection(!showCoverSection)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--color-charcoal)',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
+            >
+              <ImageIcon size={15} color="var(--gold-primary)" />
+              <span>{showCoverSection ? 'Ocultar foto de portada general' : 'Configurar una foto de portada general diferente (opcional)'}</span>
+            </button>
+
+            {showCoverSection && (
+              <div style={{ marginTop: '0.75rem', padding: '1rem', background: 'var(--color-cream)', borderRadius: 'var(--radius-sm)' }}>
+                <p style={{ fontSize: '0.76rem', color: 'var(--color-muted)', marginBottom: '0.5rem' }}>
+                  Por defecto se usará la foto de la variante marcada como Portada. Si deseas una foto de grupo o modelo diferente:
+                </p>
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                  <label className="btn btn-outline" style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem', cursor: 'pointer' }}>
+                    <Upload size={14} />
+                    <span>Seleccionar foto de portada</span>
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleCoverFileChange} />
+                  </label>
+                  {coverPreview && (
+                    <div style={{ width: '40px', height: '50px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--color-sand)' }}>
+                      <img src={coverPreview} alt="Portada" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
 
-          {/* Subida de Imagen con Previsualización Inmediata */}
+          {/* 6. Descripción de la prenda */}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)' }}>
-                Fotografía de la Prenda *
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsUrlMode(!isUrlMode)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--gold-dark)',
-                  fontSize: '0.76rem',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                {isUrlMode ? 'Subir desde dispositivo' : 'O usar URL directa'}
-              </button>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.4rem' }}>
+              Descripción / Detalles de la Confección
+            </label>
+            <textarea
+              rows={3}
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              placeholder="Detalles del tejido, caída, escote, ocasión de uso..."
+              className="input-field"
+              style={{ resize: 'vertical' }}
+            />
+          </div>
+
+          {/* 7. Switch de Disponibilidad */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.85rem 1rem',
+            background: 'var(--color-cream)',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--color-sand)'
+          }}>
+            <div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-noir)' }}>
+                Estado de Publicación en Vitrina
+              </div>
+              <div style={{ fontSize: '0.76rem', color: 'var(--color-muted)' }}>
+                {disponible ? 'Aparece disponible con botón activo para pedidos por WhatsApp' : 'Aparece como "Agotado"'}
+              </div>
             </div>
 
-            {isUrlMode ? (
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input
-                  type="url"
-                  value={imageUrlInput}
-                  onChange={(e) => {
-                    setImageUrlInput(e.target.value);
-                    setImagePreview(e.target.value);
-                  }}
-                  placeholder="https://images.unsplash.com/..."
-                  className="input-field"
-                />
+            <button
+              type="button"
+              onClick={() => setDisponible(!disponible)}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              <div className={`switch-track ${disponible ? 'active' : ''}`}>
+                <div className="switch-thumb" />
               </div>
-            ) : (
-              <div style={{
-                border: '2px dashed var(--color-sand)',
-                borderRadius: 'var(--radius-md)',
-                padding: '1.5rem',
-                textAlign: 'center',
-                background: 'var(--color-cream)',
-                position: 'relative',
-                cursor: 'pointer'
-              }}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageFileChange}
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    opacity: 0,
-                    cursor: 'pointer',
-                    width: '100%',
-                    height: '100%'
-                  }}
-                />
-                <Upload size={32} color="var(--gold-primary)" style={{ margin: '0 auto 0.5rem' }} />
-                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-noir)' }}>
-                  Haz clic o arrastra una foto aquí
-                </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--color-muted)' }}>
-                  Sube directamente desde tu PC o celular (JPG, PNG, WebP)
-                </div>
-              </div>
-            )}
-
-            {errors.imagen && (
-              <div style={{ color: 'var(--status-soldout)', fontSize: '0.78rem', marginTop: '0.25rem' }}>
-                {errors.imagen}
-              </div>
-            )}
-
-            {/* Previsualización Inmediata */}
-            {imagePreview && (
-              <div style={{ marginTop: '0.85rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <div style={{
-                  width: '90px',
-                  height: '110px',
-                  borderRadius: 'var(--radius-sm)',
-                  overflow: 'hidden',
-                  border: '1px solid var(--color-sand)',
-                  background: '#F0ECE4'
-                }}>
-                  <img
-                    src={imagePreview}
-                    alt="Previsualización"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--color-muted)' }}>
-                  <div style={{ fontWeight: 600, color: 'var(--color-noir)', marginBottom: '0.2rem' }}>
-                    Previsualización lista
-                  </div>
-                  {imageFile && <div>Archivo: {imageFile.name} ({(imageFile.size / 1024).toFixed(1)} KB)</div>}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImageFile(null);
-                      setImagePreview('');
-                      setImageUrlInput('');
-                    }}
-                    style={{
-                      marginTop: '0.35rem',
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--status-soldout)',
-                      cursor: 'pointer',
-                      fontSize: '0.78rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.25rem'
-                    }}
-                  >
-                    <Trash2 size={13} />
-                    <span>Quitar foto</span>
-                  </button>
-                </div>
-              </div>
-            )}
+            </button>
           </div>
 
           {/* Botones de acción inferiores */}
@@ -651,10 +1015,10 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
               type="submit"
               disabled={saving}
               className="btn btn-gold"
-              style={{ minWidth: '150px' }}
+              style={{ minWidth: '170px' }}
             >
               {saving ? (
-                <span>Guardando...</span>
+                <span>Subiendo fotos y guardando...</span>
               ) : (
                 <>
                   <Check size={18} />

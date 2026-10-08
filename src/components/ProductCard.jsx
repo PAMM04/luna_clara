@@ -1,27 +1,48 @@
-import React from 'react';
-import { generateWhatsAppOrderUrl, formatPrice } from '../lib/supabase';
+import React, { useState } from 'react';
+import { generateWhatsAppOrderUrl, formatPrice, normalizeProductVariants } from '../lib/supabase';
 import { MessageCircle, Eye, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function ProductCard({ product, onSelectProduct }) {
+  const variants = normalizeProductVariants(product);
+  
+  // Color activo mostrado en la tarjeta (por defecto el primero)
+  const [activeColor, setActiveColor] = useState(() => {
+    return variants[0]?.color || (product.colores?.[0]) || '';
+  });
+
+  // Buscar la variante que coincida con el color activo
+  const activeVariant = variants.find(
+    (v) => v.color?.toLowerCase() === activeColor?.toLowerCase() && v.imagen_url
+  );
+
+  const displayImage = activeVariant?.imagen_url || product.imagen_url || 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=800&q=80';
+
   const isOutOfStock = !product.disponible || (product.cantidad_disponible !== undefined && product.cantidad_disponible <= 0);
 
-  // Generar link WhatsApp directo
+  // Generar link WhatsApp directo con el color actualmente activo
   const quickWhatsAppUrl = isOutOfStock
     ? '#'
-    : generateWhatsAppOrderUrl(product);
+    : generateWhatsAppOrderUrl(product, '', activeColor);
 
+  const handleCardClick = () => {
+    onSelectProduct({
+      ...product,
+      defaultSelectedColor: activeColor
+    });
+  };
 
   return (
     <article className="product-card">
       {/* Contenedor de la Imagen */}
       <div 
         className="product-image-wrap" 
-        onClick={() => onSelectProduct(product)}
+        onClick={handleCardClick}
         style={{ cursor: 'pointer' }}
       >
         <img
-          src={product.imagen_url || 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=800&q=80'}
-          alt={product.nombre}
+          key={displayImage}
+          src={displayImage}
+          alt={`${product.nombre} - ${activeColor}`}
           className="product-image"
           loading="lazy"
         />
@@ -94,27 +115,26 @@ export default function ProductCard({ product, onSelectProduct }) {
       {/* Contenido de la Ficha */}
       <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', flex: 1 }}>
         
-        {/* Título y Precio */}
+        {/* Título y Precio en Bs. */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.5rem' }}>
           <h3 
-            onClick={() => onSelectProduct(product)}
+            onClick={handleCardClick}
             style={{
-              fontSize: '1.1rem',
-              fontWeight: 600,
-              lineHeight: 1.3,
-              cursor: 'pointer',
+              fontSize: '1.08rem',
+              fontWeight: 700,
+              fontFamily: 'var(--font-serif)',
               color: 'var(--color-noir)',
-              fontFamily: 'var(--font-serif)'
+              cursor: 'pointer',
+              lineHeight: 1.3
             }}
           >
             {product.nombre}
           </h3>
           <span style={{
-            fontWeight: 700,
-            fontSize: '1.15rem',
+            fontWeight: 800,
+            fontSize: '1.05rem',
             color: 'var(--color-noir)',
-            whiteSpace: 'nowrap',
-            fontFamily: 'var(--font-sans)'
+            whiteSpace: 'nowrap'
           }}>
             {formatPrice(product.precio)}
           </span>
@@ -123,10 +143,10 @@ export default function ProductCard({ product, onSelectProduct }) {
         {/* Descripción corta */}
         {product.descripcion && (
           <p style={{
-            fontSize: '0.84rem',
+            fontSize: '0.82rem',
             color: 'var(--color-muted)',
-            lineHeight: 1.45,
-            marginBottom: '0.9rem',
+            lineHeight: 1.5,
+            marginBottom: '0.85rem',
             display: '-webkit-box',
             WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
@@ -136,7 +156,7 @@ export default function ProductCard({ product, onSelectProduct }) {
           </p>
         )}
 
-        {/* Tallas y Colores Chips */}
+        {/* Tallas y Variantes de Color */}
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.1rem' }}>
           {/* Tallas */}
           {product.tallas && product.tallas.length > 0 && (
@@ -152,24 +172,51 @@ export default function ProductCard({ product, onSelectProduct }) {
             </div>
           )}
 
-          {/* Colores */}
-          {product.colores && product.colores.length > 0 && (
+          {/* Colores interactivos en la tarjeta */}
+          {variants.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.72rem', color: 'var(--color-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
                 Colores:
               </span>
-              {product.colores.map((color, idx) => (
-                <span key={idx} style={{
-                  fontSize: '0.72rem',
-                  background: 'var(--color-cream)',
-                  border: '1px solid var(--color-sand)',
-                  padding: '0.15rem 0.45rem',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--color-charcoal)'
-                }}>
-                  {color}
-                </span>
-              ))}
+              {variants.map((v, idx) => {
+                const isSelected = v.color?.toLowerCase() === activeColor?.toLowerCase();
+                const hasImg = Boolean(v.imagen_url);
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveColor(v.color);
+                    }}
+                    style={{
+                      fontSize: '0.72rem',
+                      background: isSelected ? 'var(--gold-subtle)' : 'var(--color-cream)',
+                      border: isSelected ? '1.5px solid var(--gold-primary)' : '1px solid var(--color-sand)',
+                      color: isSelected ? 'var(--gold-dark)' : 'var(--color-charcoal)',
+                      fontWeight: isSelected ? 700 : 500,
+                      padding: hasImg ? '0.15rem 0.5rem 0.15rem 0.35rem' : '0.15rem 0.45rem',
+                      borderRadius: 'var(--radius-sm)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title={`Ver en ${v.color}`}
+                  >
+                    {/* Indicador o mini swatch */}
+                    <span style={{
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      background: isSelected ? 'var(--gold-primary)' : '#A8A29E'
+                    }} />
+                    <span>{v.color}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -191,18 +238,18 @@ export default function ProductCard({ product, onSelectProduct }) {
               rel="noopener noreferrer"
               className="btn btn-whatsapp"
               style={{ width: '100%', fontSize: '0.82rem', padding: '0.65rem 0.5rem' }}
-              title="Pedir directamente por WhatsApp"
+              title={`Pedir ${activeColor ? `en ${activeColor}` : ''} por WhatsApp`}
             >
               <MessageCircle size={16} />
-              <span>Pedir por WhatsApp</span>
+              <span>Pedir {activeColor ? `(${activeColor})` : ''} por WhatsApp</span>
             </a>
           )}
 
           <button
-            onClick={() => onSelectProduct(product)}
+            onClick={handleCardClick}
             className="btn btn-outline"
             style={{ padding: '0.65rem', borderRadius: 'var(--radius-md)' }}
-            title="Ver detalles completos"
+            title="Ver detalles completos y variantes"
             aria-label="Ver detalles"
           >
             <Eye size={17} />

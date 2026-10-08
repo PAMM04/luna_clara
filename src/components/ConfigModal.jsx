@@ -1,17 +1,19 @@
 import React from 'react';
-import { X, Database, Key, Check, Copy } from 'lucide-react';
+import { X, Database, Copy } from 'lucide-react';
 
 export default function ConfigModal({ isOpen, onClose, addToast }) {
   if (!isOpen) return null;
 
   const handleCopySql = () => {
-    navigator.clipboard.writeText('-- Ver archivo supabase_setup.sql en la raíz del proyecto');
+    const sql = `ALTER TABLE public.productos ADD COLUMN IF NOT EXISTS variantes JSONB NOT NULL DEFAULT '[]'::jsonb;`;
+    navigator.clipboard.writeText(sql);
     addToast({
-      type: 'info',
-      title: 'Archivo SQL listo',
-      message: 'El script SQL completo está guardado en supabase_setup.sql en la raíz del proyecto.'
+      type: 'success',
+      title: 'Comando SQL copiado',
+      message: 'Comando ALTER TABLE copiado al portapapeles para el SQL Editor de Supabase.'
     });
   };
+
 
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true">

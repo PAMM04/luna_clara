@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { adminLogout, toggleProductAvailability, isSupabaseConfigured, STORE_NAME } from '../lib/supabase';
 import { 
   Plus, LogOut, Search, Edit3, Trash2, CheckCircle2, 
-  AlertCircle, Package, Layers, ArrowLeft, ExternalLink, RefreshCw, Eye
+  AlertCircle, Package, Layers, ArrowLeft, RefreshCw, Eye
 } from 'lucide-react';
 
 export default function AdminPanel({ 
@@ -409,8 +409,6 @@ export default function AdminPanel({
                 </thead>
                 <tbody>
                   {filteredProducts.map((p) => {
-                    const isOutOfStock = !p.disponible || (p.cantidad_disponible !== undefined && p.cantidad_disponible <= 0);
-
                     return (
                       <tr key={p.id} style={{ borderBottom: '1px solid var(--color-sand)' }}>
                         
@@ -460,7 +458,7 @@ export default function AdminPanel({
 
                         {/* Tallas y Colores */}
                         <td style={{ padding: '0.9rem 1rem' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                             {p.tallas && p.tallas.length > 0 && (
                               <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
                                 {p.tallas.map((t, idx) => (
@@ -470,11 +468,21 @@ export default function AdminPanel({
                                 ))}
                               </div>
                             )}
-                            {p.colores && p.colores.length > 0 && (
-                              <div style={{ fontSize: '0.72rem', color: 'var(--color-muted)' }}>
-                                {p.colores.join(', ')}
-                              </div>
-                            )}
+                            <div style={{ fontSize: '0.74rem', color: 'var(--color-charcoal)', display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                              <span>{p.colores?.join(', ') || 'Único'}</span>
+                              {p.variantes && p.variantes.length > 1 && (
+                                <span style={{
+                                  background: 'rgba(197, 160, 89, 0.18)',
+                                  color: 'var(--gold-dark)',
+                                  fontSize: '0.66rem',
+                                  padding: '0.1rem 0.4rem',
+                                  borderRadius: '3px',
+                                  fontWeight: 700
+                                }}>
+                                  {p.variantes.length} colores con foto
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
 

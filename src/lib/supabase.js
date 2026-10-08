@@ -24,6 +24,64 @@ export const supabase = isSupabaseConfigured()
 const LOCAL_STORAGE_KEY = 'luna_clara_demo_products_v1';
 const LOCAL_AUTH_KEY = 'luna_clara_demo_auth_session';
 
+// Normalizador y extractor de variantes para garantizar compatibilidad retroactiva total
+export function cleanProductDescription(description) {
+  if (!description) return '';
+  return description.replace(/<!--LC_VAR:.*?-->/gs, '').trim();
+}
+
+export function normalizeProductVariants(product) {
+  if (!product) return [];
+
+  // 1. Si ya tiene variantes estructuradas válidas
+  if (Array.isArray(product.variantes) && product.variantes.length > 0) {
+    return product.variantes.map((v, idx) => ({
+      id: v.id || `var-${idx}-${Date.now()}`,
+      color: typeof v === 'string' ? v : (v.color || 'Color'),
+      imagen_url: typeof v === 'string' ? (product.imagen_url || '') : (v.imagen_url || product.imagen_url || ''),
+      stock: v.stock !== undefined ? v.stock : product.cantidad_disponible
+    }));
+  }
+
+  // 2. Si tiene metadatos incrustados en descripcion (estrategia de persistencia de respaldo)
+  if (product.descripcion && product.descripcion.includes('<!--LC_VAR:')) {
+    try {
+      const match = product.descripcion.match(/<!--LC_VAR:(.*?)-->/s);
+      if (match && match[1]) {
+        const parsed = JSON.parse(match[1]);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((v, idx) => ({
+            id: v.id || `var-${idx}-${Date.now()}`,
+            color: v.color || 'Color',
+            imagen_url: v.imagen_url || product.imagen_url || '',
+            stock: v.stock !== undefined ? v.stock : product.cantidad_disponible
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('Error parsing encoded variants:', e);
+    }
+  }
+
+  // 3. Si solo tiene el array plano 'colores', sintetizar variantes usando la imagen_url principal
+  if (Array.isArray(product.colores) && product.colores.length > 0) {
+    return product.colores.map((color, idx) => ({
+      id: `var-synthesized-${idx}`,
+      color: color,
+      imagen_url: product.imagen_url || '',
+      stock: product.cantidad_disponible
+    }));
+  }
+
+  // 4. Fallback si no hay colores especificados
+  return [{
+    id: 'var-default',
+    color: 'Único',
+    imagen_url: product.imagen_url || '',
+    stock: product.cantidad_disponible
+  }];
+}
+
 // Productos iniciales de alta costura para demostración
 export const INITIAL_DEMO_PRODUCTS = [
   {
@@ -36,7 +94,12 @@ export const INITIAL_DEMO_PRODUCTS = [
     colores: ['Champagne', 'Negro Noche', 'Verde Esmeralda'],
     cantidad_disponible: 6,
     disponible: true,
-    imagen_url: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=900&q=80'
+    imagen_url: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=900&q=80',
+    variantes: [
+      { id: 'v1-1', color: 'Champagne', imagen_url: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v1-2', color: 'Negro Noche', imagen_url: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v1-3', color: 'Verde Esmeralda', imagen_url: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?auto=format&fit=crop&w=900&q=80' }
+    ]
   },
   {
     id: 'prod-002',
@@ -48,7 +111,12 @@ export const INITIAL_DEMO_PRODUCTS = [
     colores: ['Crema Marfil', 'Camel', 'Negro'],
     cantidad_disponible: 4,
     disponible: true,
-    imagen_url: 'https://images.unsplash.com/photo-1584273143981-41c073dfe8f8?auto=format&fit=crop&w=900&q=80'
+    imagen_url: 'https://images.unsplash.com/photo-1584273143981-41c073dfe8f8?auto=format&fit=crop&w=900&q=80',
+    variantes: [
+      { id: 'v2-1', color: 'Crema Marfil', imagen_url: 'https://images.unsplash.com/photo-1584273143981-41c073dfe8f8?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v2-2', color: 'Camel', imagen_url: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v2-3', color: 'Negro', imagen_url: 'https://images.unsplash.com/photo-1548624149-f7b7cb2e8a15?auto=format&fit=crop&w=900&q=80' }
+    ]
   },
   {
     id: 'prod-003',
@@ -60,7 +128,12 @@ export const INITIAL_DEMO_PRODUCTS = [
     colores: ['Beige Arena', 'Blanco Crudo', 'Terracota'],
     cantidad_disponible: 9,
     disponible: true,
-    imagen_url: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=900&q=80'
+    imagen_url: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=900&q=80',
+    variantes: [
+      { id: 'v3-1', color: 'Beige Arena', imagen_url: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v3-2', color: 'Blanco Crudo', imagen_url: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v3-3', color: 'Terracota', imagen_url: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80' }
+    ]
   },
   {
     id: 'prod-004',
@@ -72,7 +145,11 @@ export const INITIAL_DEMO_PRODUCTS = [
     colores: ['Negro Noir', 'Azul Zafiro'],
     cantidad_disponible: 2,
     disponible: true,
-    imagen_url: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=80'
+    imagen_url: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=80',
+    variantes: [
+      { id: 'v4-1', color: 'Negro Noir', imagen_url: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v4-2', color: 'Azul Zafiro', imagen_url: 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=900&q=80' }
+    ]
   },
   {
     id: 'prod-005',
@@ -84,7 +161,11 @@ export const INITIAL_DEMO_PRODUCTS = [
     colores: ['Blanco Perla', 'Rosa Palo'],
     cantidad_disponible: 5,
     disponible: true,
-    imagen_url: 'https://images.unsplash.com/photo-1564257631407-4deb1f99d992?auto=format&fit=crop&w=900&q=80'
+    imagen_url: 'https://images.unsplash.com/photo-1564257631407-4deb1f99d992?auto=format&fit=crop&w=900&q=80',
+    variantes: [
+      { id: 'v5-1', color: 'Blanco Perla', imagen_url: 'https://images.unsplash.com/photo-1564257631407-4deb1f99d992?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v5-2', color: 'Rosa Palo', imagen_url: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=900&q=80' }
+    ]
   },
   {
     id: 'prod-006',
@@ -96,7 +177,12 @@ export const INITIAL_DEMO_PRODUCTS = [
     colores: ['Caramelo', 'Blanco', 'Negro'],
     cantidad_disponible: 0,
     disponible: false,
-    imagen_url: 'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=900&q=80'
+    imagen_url: 'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=900&q=80',
+    variantes: [
+      { id: 'v6-1', color: 'Caramelo', imagen_url: 'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v6-2', color: 'Blanco', imagen_url: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v6-3', color: 'Negro', imagen_url: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=900&q=80' }
+    ]
   }
 ];
 
@@ -141,10 +227,18 @@ export async function getProducts() {
       console.error('Error fetching products from Supabase:', error);
       throw error;
     }
-    return data || [];
+    return (data || []).map((p) => ({
+      ...p,
+      descripcion: cleanProductDescription(p.descripcion),
+      variantes: normalizeProductVariants(p)
+    }));
   } else {
     // Modo demostración local
-    return getLocalProducts();
+    return getLocalProducts().map((p) => ({
+      ...p,
+      descripcion: cleanProductDescription(p.descripcion),
+      variantes: normalizeProductVariants(p)
+    }));
   }
 }
 
@@ -156,8 +250,9 @@ export async function uploadProductImage(file) {
 
   if (isSupabaseConfigured() && supabase) {
     // Sanitizar nombre de archivo y generar nombre único
-    const fileExt = file.name.split('.').pop();
-    const cleanFileName = file.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const fileExt = file.name ? file.name.split('.').pop() : 'jpg';
+    const rawName = file.name ? file.name.split('.')[0] : 'variante';
+    const cleanFileName = rawName.replace(/[^a-zA-Z0-9]/g, '_');
     const fileName = `${Date.now()}_${cleanFileName}.${fileExt}`;
     const filePath = `prendas/${fileName}`;
 
@@ -183,50 +278,122 @@ export async function uploadProductImage(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve(e.target.result);
-      reader.onerror = (e) => reject(new Error('Error al procesar la imagen localmente'));
+      reader.onerror = () => reject(new Error('Error al procesar la imagen localmente'));
       reader.readAsDataURL(file);
     });
   }
 }
 
 /**
- * Crear un nuevo producto
+ * Crear un nuevo producto con variantes de color y fotos
  */
-export async function createProduct(productData, imageFile = null) {
-  let finalImageUrl = productData.imagen_url || '';
+export async function createProduct(productData, coverImageFile = null) {
+  // 1. Procesar y subir imágenes de variantes si existen archivos pendientes
+  const processedVariants = [];
+  const incomingVariants = Array.isArray(productData.variantes) ? productData.variantes : [];
 
-  if (imageFile) {
-    finalImageUrl = await uploadProductImage(imageFile);
+  for (let i = 0; i < incomingVariants.length; i++) {
+    const v = incomingVariants[i];
+    let variantImageUrl = v.imagen_url || '';
+
+    // Si la variante tiene un archivo local nuevo para subir
+    if (v.file) {
+      variantImageUrl = await uploadProductImage(v.file);
+    }
+
+    processedVariants.push({
+      id: v.id || `var-${i}-${Date.now()}`,
+      color: (v.color || `Color ${i + 1}`).trim(),
+      imagen_url: variantImageUrl,
+      stock: v.stock !== undefined ? parseInt(v.stock, 10) : (parseInt(productData.cantidad_disponible, 10) || 0)
+    });
   }
 
-  if (!finalImageUrl) {
-    throw new Error('La imagen del producto es obligatoria');
+  // 2. Determinar la fotografía principal / portada
+  let finalCoverUrl = productData.imagen_url || '';
+  if (coverImageFile) {
+    finalCoverUrl = await uploadProductImage(coverImageFile);
+  } else if (!finalCoverUrl && processedVariants.length > 0) {
+    // Si no se asignó portada separada, usar la primera variante con foto
+    const firstWithPic = processedVariants.find((v) => v.imagen_url);
+    if (firstWithPic) {
+      finalCoverUrl = firstWithPic.imagen_url;
+    }
   }
+
+  // Si alguna variante no tiene foto propia, asignarle la portada para que no quede vacía
+  processedVariants.forEach((v) => {
+    if (!v.imagen_url && finalCoverUrl) {
+      v.imagen_url = finalCoverUrl;
+    }
+  });
+
+  if (!finalCoverUrl && processedVariants.length === 0) {
+    throw new Error('Debes proporcionar al menos una fotografía para la prenda o para una de sus variantes.');
+  }
+
+  // Extraer lista de colores sincronizada
+  const derivedColors = processedVariants.map((v) => v.color).filter(Boolean);
+  const finalColores = derivedColors.length > 0 
+    ? derivedColors 
+    : (Array.isArray(productData.colores) && productData.colores.length > 0 ? productData.colores : ['Único']);
+
+  const baseDescription = cleanProductDescription(productData.descripcion || '');
 
   const payload = {
     nombre: productData.nombre.trim(),
-    descripcion: productData.descripcion ? productData.descripcion.trim() : '',
+    descripcion: baseDescription,
     precio: parseFloat(productData.precio) || 0,
     tallas: Array.isArray(productData.tallas) ? productData.tallas : [],
-    colores: Array.isArray(productData.colores) ? productData.colores : [],
+    colores: finalColores,
+    variantes: processedVariants,
     cantidad_disponible: parseInt(productData.cantidad_disponible, 10) || 0,
     disponible: Boolean(productData.disponible),
-    imagen_url: finalImageUrl
+    imagen_url: finalCoverUrl || (processedVariants[0]?.imagen_url || '')
   };
 
   if (isSupabaseConfigured() && supabase) {
-    const { data, error } = await supabase
+    // Intento 1: Guardar nativamente con columna 'variantes' JSONB
+    let { data, error } = await supabase
       .from('productos')
       .insert([payload])
       .select()
       .single();
 
-    if (error) {
+    // Si la columna 'variantes' aún no existe en Supabase (código 42703), usar respaldo resiliente
+    if (error && error.code === '42703') {
+      console.info('Aviso: La columna "variantes" no existe en Supabase aún. Guardando con respaldo transparente en descripción.');
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.variantes;
+      
+      const metaTag = `<!--LC_VAR:${JSON.stringify(processedVariants)}-->`;
+      fallbackPayload.descripcion = fallbackPayload.descripcion 
+        ? `${fallbackPayload.descripcion}\n\n${metaTag}` 
+        : metaTag;
+
+      const retryResult = await supabase
+        .from('productos')
+        .insert([fallbackPayload])
+        .select()
+        .single();
+
+      if (retryResult.error) {
+        console.error('Error insertando prenda con respaldo:', retryResult.error);
+        throw retryResult.error;
+      }
+      data = retryResult.data;
+    } else if (error) {
       console.error('Error creating product in Supabase:', error);
       throw error;
     }
-    return data;
+
+    return {
+      ...data,
+      descripcion: cleanProductDescription(data.descripcion),
+      variantes: normalizeProductVariants(data)
+    };
   } else {
+    // Modo local / demo
     const newProduct = {
       id: 'demo-' + Date.now(),
       created_at: new Date().toISOString(),
@@ -235,45 +402,117 @@ export async function createProduct(productData, imageFile = null) {
     const list = getLocalProducts();
     const updated = [newProduct, ...list];
     setLocalProducts(updated);
-    return newProduct;
+    return {
+      ...newProduct,
+      variantes: normalizeProductVariants(newProduct)
+    };
   }
 }
 
 /**
- * Actualizar una prenda existente
+ * Actualizar una prenda existente con variantes
  */
-export async function updateProduct(id, productData, newImageFile = null) {
-  let finalImageUrl = productData.imagen_url;
+export async function updateProduct(id, productData, newCoverImageFile = null) {
+  // 1. Procesar variantes
+  const processedVariants = [];
+  const incomingVariants = Array.isArray(productData.variantes) ? productData.variantes : [];
 
-  if (newImageFile) {
-    finalImageUrl = await uploadProductImage(newImageFile);
+  for (let i = 0; i < incomingVariants.length; i++) {
+    const v = incomingVariants[i];
+    let variantImageUrl = v.imagen_url || '';
+
+    // Si tiene un archivo nuevo adjunto
+    if (v.file) {
+      variantImageUrl = await uploadProductImage(v.file);
+    }
+
+    processedVariants.push({
+      id: v.id || `var-${i}-${Date.now()}`,
+      color: (v.color || `Color ${i + 1}`).trim(),
+      imagen_url: variantImageUrl,
+      stock: v.stock !== undefined ? parseInt(v.stock, 10) : (parseInt(productData.cantidad_disponible, 10) || 0)
+    });
   }
+
+  // 2. Determinar la fotografía principal / portada
+  let finalCoverUrl = productData.imagen_url || '';
+  if (newCoverImageFile) {
+    finalCoverUrl = await uploadProductImage(newCoverImageFile);
+  } else if (!finalCoverUrl && processedVariants.length > 0) {
+    const firstWithPic = processedVariants.find((v) => v.imagen_url);
+    if (firstWithPic) finalCoverUrl = firstWithPic.imagen_url;
+  }
+
+  // Asegurar que ninguna variante quede sin imagen si hay una portada
+  processedVariants.forEach((v) => {
+    if (!v.imagen_url && finalCoverUrl) {
+      v.imagen_url = finalCoverUrl;
+    }
+  });
+
+  const derivedColors = processedVariants.map((v) => v.color).filter(Boolean);
+  const finalColores = derivedColors.length > 0 
+    ? derivedColors 
+    : (Array.isArray(productData.colores) && productData.colores.length > 0 ? productData.colores : ['Único']);
+
+  const baseDescription = cleanProductDescription(productData.descripcion || '');
 
   const payload = {
     nombre: productData.nombre.trim(),
-    descripcion: productData.descripcion ? productData.descripcion.trim() : '',
+    descripcion: baseDescription,
     precio: parseFloat(productData.precio) || 0,
     tallas: Array.isArray(productData.tallas) ? productData.tallas : [],
-    colores: Array.isArray(productData.colores) ? productData.colores : [],
+    colores: finalColores,
+    variantes: processedVariants,
     cantidad_disponible: parseInt(productData.cantidad_disponible, 10) || 0,
     disponible: Boolean(productData.disponible),
-    imagen_url: finalImageUrl
+    imagen_url: finalCoverUrl || (processedVariants[0]?.imagen_url || productData.imagen_url)
   };
 
   if (isSupabaseConfigured() && supabase) {
-    const { data, error } = await supabase
+    // Intento 1: Guardar nativamente con columna 'variantes' JSONB
+    let { data, error } = await supabase
       .from('productos')
       .update(payload)
       .eq('id', id)
       .select()
       .single();
 
-    if (error) {
+    // Si la columna 'variantes' no existe en Supabase (código 42703), usar respaldo transparente
+    if (error && error.code === '42703') {
+      console.info('Aviso: Guardando actualización con respaldo en descripción para variantes.');
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.variantes;
+      
+      const metaTag = `<!--LC_VAR:${JSON.stringify(processedVariants)}-->`;
+      fallbackPayload.descripcion = fallbackPayload.descripcion 
+        ? `${fallbackPayload.descripcion}\n\n${metaTag}` 
+        : metaTag;
+
+      const retryResult = await supabase
+        .from('productos')
+        .update(fallbackPayload)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (retryResult.error) {
+        console.error('Error actualizando prenda con respaldo:', retryResult.error);
+        throw retryResult.error;
+      }
+      data = retryResult.data;
+    } else if (error) {
       console.error('Error updating product in Supabase:', error);
       throw error;
     }
-    return data;
+
+    return {
+      ...data,
+      descripcion: cleanProductDescription(data.descripcion),
+      variantes: normalizeProductVariants(data)
+    };
   } else {
+    // Modo local / demo
     const list = getLocalProducts();
     const index = list.findIndex((p) => p.id === id);
     if (index === -1) throw new Error('Producto no encontrado');
@@ -281,9 +520,13 @@ export async function updateProduct(id, productData, newImageFile = null) {
     const updatedProduct = { ...list[index], ...payload };
     list[index] = updatedProduct;
     setLocalProducts(list);
-    return updatedProduct;
+    return {
+      ...updatedProduct,
+      variantes: normalizeProductVariants(updatedProduct)
+    };
   }
 }
+
 
 /**
  * Alternar rápidamente la disponibilidad de un producto
@@ -453,20 +696,31 @@ export function generateWhatsAppOrderUrl(product, selectedSize = '', selectedCol
   text += `*Producto:* ${product.nombre}\n`;
   text += `*Precio:* Bs. ${Number(product.precio).toFixed(2)}\n`;
   
+  if (selectedColor) {
+    text += `*Color / Variante:* ${selectedColor}\n`;
+  } else if (product.colores && product.colores.length > 0) {
+    text += `*Colores disponibles:* ${product.colores.join(', ')}\n`;
+  }
+
   if (selectedSize) {
     text += `*Talla seleccionada:* ${selectedSize}\n`;
   } else if (product.tallas && product.tallas.length > 0) {
     text += `*Tallas disponibles:* ${product.tallas.join(', ')}\n`;
   }
-  
-  if (selectedColor) {
-    text += `*Color seleccionado:* ${selectedColor}\n`;
-  } else if (product.colores && product.colores.length > 0) {
-    text += `*Colores disponibles:* ${product.colores.join(', ')}\n`;
+
+  // Si la variante tiene fotografía propia, añadir el enlace para confirmación visual inmediata
+  if (selectedColor && Array.isArray(product.variantes)) {
+    const matched = product.variantes.find(
+      (v) => v.color?.toLowerCase() === selectedColor.toLowerCase() && v.imagen_url
+    );
+    if (matched && matched.imagen_url && matched.imagen_url.startsWith('http')) {
+      text += `*Foto de la variante:* ${matched.imagen_url}\n`;
+    }
   }
 
   text += `\n¿Tienen disponibilidad para envío inmediato? Muchas gracias.`;
 
   return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
 }
+
 
