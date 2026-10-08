@@ -1,9 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { adminLogout, toggleProductAvailability, isSupabaseConfigured, STORE_NAME } from '../lib/supabase';
+import ScrollToTop from './ScrollToTop';
 import { 
   Plus, LogOut, Search, Edit3, Trash2, CheckCircle2, 
-  AlertCircle, Package, Layers, ArrowLeft, RefreshCw, Eye
+  AlertCircle, Package, Layers, ArrowLeft, RefreshCw, Eye, ChevronDown
 } from 'lucide-react';
+
+const PAGE_SIZE = 10;
 
 export default function AdminPanel({ 
   products, 
@@ -20,6 +23,8 @@ export default function AdminPanel({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterState, setFilterState] = useState('ALL'); // 'ALL', 'AVAILABLE', 'SOLDOUT'
   const [togglingId, setTogglingId] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef(null);
 
   const isConfigured = isSupabaseConfigured();
 
@@ -53,6 +58,45 @@ export default function AdminPanel({
       return true;
     });
   }, [products, searchQuery, filterState]);
+
+  // Reiniciar a 10 elementos cuando cambie la búsqueda o filtro
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [searchQuery, filterState]);
+
+  // Slice paginado progresivamente
+  const visibleProducts = useMemo(() => {
+    return filteredProducts.slice(0, visibleCount);
+  }, [filteredProducts, visibleCount]);
+
+  const hasMore = visibleCount < filteredProducts.length;
+
+  // Detección de scroll para cargar de 10 en 10 al aproximarse al final
+  useEffect(() => {
+    if (!hasMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, filteredProducts.length));
+        }
+      },
+      { rootMargin: '250px 0px', threshold: 0.05 }
+    );
+
+    const currentSentinel = sentinelRef.current;
+    if (currentSentinel) {
+      observer.observe(currentSentinel);
+    }
+
+    return () => {
+      if (currentSentinel) observer.unobserve(currentSentinel);
+    };
+  }, [hasMore, filteredProducts.length]);
+
+  const handleLoadMore = () => {
+    setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, filteredProducts.length));
+  };
 
   // Manejo de Cerrar Sesión
   const handleLogout = async () => {
@@ -408,7 +452,7 @@ export default function AdminPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProducts.map((p) => {
+                  {visibleProducts.map((p) => {
                     return (
                       <tr key={p.id} style={{ borderBottom: '1px solid var(--color-sand)' }}>
                         
@@ -592,7 +636,69 @@ export default function AdminPanel({
 
         </div>
 
+        {/* Elemento centinela para detectar scroll en Admin */}
+        <div 
+          ref={sentinelRef} 
+          style={{ height: '8px', width: '100%', margin: '0.5rem 0', pointerEvents: 'none', opacity: 0 }} 
+          aria-hidden="true" 
+        />
+
+        {/* Barra de paginación progresiva y botón táctil */}
+        {filteredProducts.length > 0 && (
+          <div style={{
+            marginTop: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '0.75rem'
+          }}>
+            <div style={{
+              fontSize: '0.82rem',
+              color: 'var(--color-muted)',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              background: 'var(--color-white)',
+              padding: '0.45rem 1rem',
+              borderRadius: 'var(--radius-full)',
+              border: '1px solid var(--color-sand)',
+              boxShadow: 'var(--shadow-sm)'
+            }}>
+              <Layers size={15} color="var(--gold-primary)" />
+              <span>Mostrando <strong>{visibleProducts.length}</strong> de <strong>{filteredProducts.length}</strong> prendas en inventario</span>
+            </div>
+
+            {hasMore ? (
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                className="btn btn-outline"
+                style={{
+                  padding: '0.7rem 1.6rem',
+                  fontSize: '0.85rem',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'var(--color-white)',
+                  boxShadow: 'var(--shadow-sm)',
+                  fontWeight: 600,
+                  gap: '0.45rem'
+                }}
+              >
+                <ChevronDown size={17} />
+                <span>Cargar 10 prendas más</span>
+              </button>
+            ) : filteredProducts.length > PAGE_SIZE ? (
+              <span style={{ fontSize: '0.78rem', color: 'var(--gold-dark)', fontWeight: 600 }}>
+                ✓ Has llegado al final del inventario
+              </span>
+            ) : null}
+          </div>
+        )}
+
       </main>
+
+      {/* Botón flotante Volver Arriba para el panel de administración */}
+      <ScrollToTop isAdmin={true} bottomOffset="1.5rem" />
 
     </div>
   );

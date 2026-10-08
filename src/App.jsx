@@ -133,7 +133,7 @@ export default function App() {
   const handleConfirmDelete = async (product) => {
     setIsDeleting(true);
     try {
-      await deleteProduct(product.id, product.imagen_url);
+      await deleteProduct(product.id, product);
       addToast({
         type: 'success',
         title: 'Prenda eliminada',

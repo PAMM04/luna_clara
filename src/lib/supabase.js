@@ -33,13 +33,18 @@ export function cleanProductDescription(description) {
 export function normalizeProductVariants(product) {
   if (!product) return [];
 
+  const defaultSizes = Array.isArray(product.tallas) && product.tallas.length > 0 
+    ? product.tallas 
+    : ['S', 'M', 'L'];
+
   // 1. Si ya tiene variantes estructuradas válidas
   if (Array.isArray(product.variantes) && product.variantes.length > 0) {
     return product.variantes.map((v, idx) => ({
       id: v.id || `var-${idx}-${Date.now()}`,
       color: typeof v === 'string' ? v : (v.color || 'Color'),
       imagen_url: typeof v === 'string' ? (product.imagen_url || '') : (v.imagen_url || product.imagen_url || ''),
-      stock: v.stock !== undefined ? v.stock : product.cantidad_disponible
+      stock: v.stock !== undefined ? v.stock : product.cantidad_disponible,
+      tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? v.tallas : [...defaultSizes]
     }));
   }
 
@@ -54,7 +59,8 @@ export function normalizeProductVariants(product) {
             id: v.id || `var-${idx}-${Date.now()}`,
             color: v.color || 'Color',
             imagen_url: v.imagen_url || product.imagen_url || '',
-            stock: v.stock !== undefined ? v.stock : product.cantidad_disponible
+            stock: v.stock !== undefined ? v.stock : product.cantidad_disponible,
+            tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? v.tallas : [...defaultSizes]
           }));
         }
       }
@@ -69,7 +75,8 @@ export function normalizeProductVariants(product) {
       id: `var-synthesized-${idx}`,
       color: color,
       imagen_url: product.imagen_url || '',
-      stock: product.cantidad_disponible
+      stock: product.cantidad_disponible,
+      tallas: [...defaultSizes]
     }));
   }
 
@@ -78,7 +85,8 @@ export function normalizeProductVariants(product) {
     id: 'var-default',
     color: 'Único',
     imagen_url: product.imagen_url || '',
-    stock: product.cantidad_disponible
+    stock: product.cantidad_disponible,
+    tallas: [...defaultSizes]
   }];
 }
 
@@ -90,15 +98,15 @@ export const INITIAL_DEMO_PRODUCTS = [
     nombre: 'Vestido Midi Seda Champagne',
     descripcion: 'Vestido midi confeccionado en satén de seda pura con escote fluido y espalda descubierta. Corte al bies para una caída perfecta y elegante.',
     precio: 220.00,
-    tallas: ['XS', 'S', 'M', 'L'],
+    tallas: ['XS', 'S', 'M', 'L', 'XL', '2'],
     colores: ['Champagne', 'Negro Noche', 'Verde Esmeralda'],
     cantidad_disponible: 6,
     disponible: true,
     imagen_url: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=900&q=80',
     variantes: [
-      { id: 'v1-1', color: 'Champagne', imagen_url: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v1-2', color: 'Negro Noche', imagen_url: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v1-3', color: 'Verde Esmeralda', imagen_url: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?auto=format&fit=crop&w=900&q=80' }
+      { id: 'v1-1', color: 'Champagne', tallas: ['XS', 'S', 'M'], imagen_url: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v1-2', color: 'Negro Noche', tallas: ['M', '2'], imagen_url: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v1-3', color: 'Verde Esmeralda', tallas: ['XL', 'S'], imagen_url: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?auto=format&fit=crop&w=900&q=80' }
     ]
   },
   {
@@ -107,15 +115,15 @@ export const INITIAL_DEMO_PRODUCTS = [
     nombre: 'Blazer Sastrero Oversized Crema',
     descripcion: 'Blazer estructurado con solapas de pico, doble botonadura y forro satinado suave. Confección sastrera contemporánea que eleva cualquier conjunto.',
     precio: 285.50,
-    tallas: ['S', 'M', 'L'],
+    tallas: ['S', 'M', 'L', 'XL'],
     colores: ['Crema Marfil', 'Camel', 'Negro'],
     cantidad_disponible: 4,
     disponible: true,
     imagen_url: 'https://images.unsplash.com/photo-1584273143981-41c073dfe8f8?auto=format&fit=crop&w=900&q=80',
     variantes: [
-      { id: 'v2-1', color: 'Crema Marfil', imagen_url: 'https://images.unsplash.com/photo-1584273143981-41c073dfe8f8?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v2-2', color: 'Camel', imagen_url: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v2-3', color: 'Negro', imagen_url: 'https://images.unsplash.com/photo-1548624149-f7b7cb2e8a15?auto=format&fit=crop&w=900&q=80' }
+      { id: 'v2-1', color: 'Crema Marfil', tallas: ['S', 'M'], imagen_url: 'https://images.unsplash.com/photo-1584273143981-41c073dfe8f8?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v2-2', color: 'Camel', tallas: ['M', 'L'], imagen_url: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v2-3', color: 'Negro', tallas: ['S', 'XL'], imagen_url: 'https://images.unsplash.com/photo-1548624149-f7b7cb2e8a15?auto=format&fit=crop&w=900&q=80' }
     ]
   },
   {
@@ -130,9 +138,9 @@ export const INITIAL_DEMO_PRODUCTS = [
     disponible: true,
     imagen_url: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=900&q=80',
     variantes: [
-      { id: 'v3-1', color: 'Beige Arena', imagen_url: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v3-2', color: 'Blanco Crudo', imagen_url: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v3-3', color: 'Terracota', imagen_url: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80' }
+      { id: 'v3-1', color: 'Beige Arena', tallas: ['S', 'M', 'L'], imagen_url: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v3-2', color: 'Blanco Crudo', tallas: ['M', 'L'], imagen_url: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v3-3', color: 'Terracota', tallas: ['S', 'XL'], imagen_url: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80' }
     ]
   },
   {
@@ -147,8 +155,8 @@ export const INITIAL_DEMO_PRODUCTS = [
     disponible: true,
     imagen_url: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=80',
     variantes: [
-      { id: 'v4-1', color: 'Negro Noir', imagen_url: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v4-2', color: 'Azul Zafiro', imagen_url: 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=900&q=80' }
+      { id: 'v4-1', color: 'Negro Noir', tallas: ['XS', 'S', 'M'], imagen_url: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v4-2', color: 'Azul Zafiro', tallas: ['S', 'M'], imagen_url: 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=900&q=80' }
     ]
   },
   {
@@ -163,8 +171,8 @@ export const INITIAL_DEMO_PRODUCTS = [
     disponible: true,
     imagen_url: 'https://images.unsplash.com/photo-1564257631407-4deb1f99d992?auto=format&fit=crop&w=900&q=80',
     variantes: [
-      { id: 'v5-1', color: 'Blanco Perla', imagen_url: 'https://images.unsplash.com/photo-1564257631407-4deb1f99d992?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v5-2', color: 'Rosa Palo', imagen_url: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=900&q=80' }
+      { id: 'v5-1', color: 'Blanco Perla', tallas: ['S', 'M', 'L'], imagen_url: 'https://images.unsplash.com/photo-1564257631407-4deb1f99d992?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v5-2', color: 'Rosa Palo', tallas: ['M', 'L'], imagen_url: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=900&q=80' }
     ]
   },
   {
@@ -179,9 +187,9 @@ export const INITIAL_DEMO_PRODUCTS = [
     disponible: false,
     imagen_url: 'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=900&q=80',
     variantes: [
-      { id: 'v6-1', color: 'Caramelo', imagen_url: 'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v6-2', color: 'Blanco', imagen_url: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80' },
-      { id: 'v6-3', color: 'Negro', imagen_url: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=900&q=80' }
+      { id: 'v6-1', color: 'Caramelo', tallas: ['Única', 'S'], imagen_url: 'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v6-2', color: 'Blanco', tallas: ['S', 'M'], imagen_url: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80' },
+      { id: 'v6-3', color: 'Negro', tallas: ['Única', 'M'], imagen_url: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=900&q=80' }
     ]
   }
 ];
@@ -285,12 +293,36 @@ export async function uploadProductImage(file) {
 }
 
 /**
- * Crear un nuevo producto con variantes de color y fotos
+ * Extrae la ruta relativa de un archivo dentro del bucket 'imagenes-productos'
+ * ej: 'https://xyz.supabase.co/storage/v1/object/public/imagenes-productos/prendas/123.jpg'
+ * -> 'prendas/123.jpg'
+ */
+export function extractStoragePath(url) {
+  if (!url || typeof url !== 'string') return null;
+  if (!url.includes('imagenes-productos/')) return null;
+  try {
+    const parts = url.split('imagenes-productos/');
+    if (parts.length > 1) {
+      let relativePath = parts[1].split('?')[0]; // descartar parámetros query si hubieran
+      relativePath = decodeURIComponent(relativePath).trim();
+      return relativePath || null;
+    }
+  } catch (e) {
+    console.warn('Error extrayendo ruta de storage:', e);
+  }
+  return null;
+}
+
+/**
+ * Crear un nuevo producto con variantes de color, tallas por color y fotos
  */
 export async function createProduct(productData, coverImageFile = null) {
   // 1. Procesar y subir imágenes de variantes si existen archivos pendientes
   const processedVariants = [];
   const incomingVariants = Array.isArray(productData.variantes) ? productData.variantes : [];
+  const defaultSizes = Array.isArray(productData.tallas) && productData.tallas.length > 0 
+    ? productData.tallas 
+    : ['S', 'M', 'L'];
 
   for (let i = 0; i < incomingVariants.length; i++) {
     const v = incomingVariants[i];
@@ -301,9 +333,14 @@ export async function createProduct(productData, coverImageFile = null) {
       variantImageUrl = await uploadProductImage(v.file);
     }
 
+    const variantSizes = Array.isArray(v.tallas) && v.tallas.length > 0
+      ? v.tallas
+      : [...defaultSizes];
+
     processedVariants.push({
       id: v.id || `var-${i}-${Date.now()}`,
       color: (v.color || `Color ${i + 1}`).trim(),
+      tallas: variantSizes,
       imagen_url: variantImageUrl,
       stock: v.stock !== undefined ? parseInt(v.stock, 10) : (parseInt(productData.cantidad_disponible, 10) || 0)
     });
@@ -338,13 +375,19 @@ export async function createProduct(productData, coverImageFile = null) {
     ? derivedColors 
     : (Array.isArray(productData.colores) && productData.colores.length > 0 ? productData.colores : ['Único']);
 
+  // Extraer unión de tallas de todas las variantes para el catálogo y filtros generales
+  const allVariantSizes = Array.from(new Set(
+    processedVariants.flatMap((v) => v.tallas || [])
+  ));
+  const finalTallas = allVariantSizes.length > 0 ? allVariantSizes : defaultSizes;
+
   const baseDescription = cleanProductDescription(productData.descripcion || '');
 
   const payload = {
     nombre: productData.nombre.trim(),
     descripcion: baseDescription,
     precio: parseFloat(productData.precio) || 0,
-    tallas: Array.isArray(productData.tallas) ? productData.tallas : [],
+    tallas: finalTallas,
     colores: finalColores,
     variantes: processedVariants,
     cantidad_disponible: parseInt(productData.cantidad_disponible, 10) || 0,
@@ -410,12 +453,15 @@ export async function createProduct(productData, coverImageFile = null) {
 }
 
 /**
- * Actualizar una prenda existente con variantes
+ * Actualizar una prenda existente con variantes de color, tallas y fotos
  */
 export async function updateProduct(id, productData, newCoverImageFile = null) {
   // 1. Procesar variantes
   const processedVariants = [];
   const incomingVariants = Array.isArray(productData.variantes) ? productData.variantes : [];
+  const defaultSizes = Array.isArray(productData.tallas) && productData.tallas.length > 0 
+    ? productData.tallas 
+    : ['S', 'M', 'L'];
 
   for (let i = 0; i < incomingVariants.length; i++) {
     const v = incomingVariants[i];
@@ -426,9 +472,14 @@ export async function updateProduct(id, productData, newCoverImageFile = null) {
       variantImageUrl = await uploadProductImage(v.file);
     }
 
+    const variantSizes = Array.isArray(v.tallas) && v.tallas.length > 0
+      ? v.tallas
+      : [...defaultSizes];
+
     processedVariants.push({
       id: v.id || `var-${i}-${Date.now()}`,
       color: (v.color || `Color ${i + 1}`).trim(),
+      tallas: variantSizes,
       imagen_url: variantImageUrl,
       stock: v.stock !== undefined ? parseInt(v.stock, 10) : (parseInt(productData.cantidad_disponible, 10) || 0)
     });
@@ -455,13 +506,19 @@ export async function updateProduct(id, productData, newCoverImageFile = null) {
     ? derivedColors 
     : (Array.isArray(productData.colores) && productData.colores.length > 0 ? productData.colores : ['Único']);
 
+  // Unión de todas las tallas de las variantes
+  const allVariantSizes = Array.from(new Set(
+    processedVariants.flatMap((v) => v.tallas || [])
+  ));
+  const finalTallas = allVariantSizes.length > 0 ? allVariantSizes : defaultSizes;
+
   const baseDescription = cleanProductDescription(productData.descripcion || '');
 
   const payload = {
     nombre: productData.nombre.trim(),
     descripcion: baseDescription,
     precio: parseFloat(productData.precio) || 0,
-    tallas: Array.isArray(productData.tallas) ? productData.tallas : [],
+    tallas: finalTallas,
     colores: finalColores,
     variantes: processedVariants,
     cantidad_disponible: parseInt(productData.cantidad_disponible, 10) || 0,
@@ -527,7 +584,6 @@ export async function updateProduct(id, productData, newCoverImageFile = null) {
   }
 }
 
-
 /**
  * Alternar rápidamente la disponibilidad de un producto
  */
@@ -557,23 +613,77 @@ export async function toggleProductAvailability(id, currentStatus) {
 }
 
 /**
- * Eliminar una prenda
+ * Eliminar una prenda y todas las imágenes asociadas en Supabase Storage
+ * (tanto la foto de portada como todas las fotos de variantes de color)
  */
-export async function deleteProduct(id, imageUrl = null) {
+export async function deleteProduct(id, productOrImages = null) {
   if (isSupabaseConfigured() && supabase) {
-    // Si la imagen proviene de Supabase Storage, intentar removerla
-    if (imageUrl && imageUrl.includes('imagenes-productos')) {
+    const pathsToRemove = new Set();
+
+    const collectUrls = (item) => {
+      if (!item) return;
+      if (typeof item === 'string') {
+        const p = extractStoragePath(item);
+        if (p) pathsToRemove.add(p);
+      } else if (Array.isArray(item)) {
+        item.forEach(collectUrls);
+      } else if (typeof item === 'object') {
+        if (item.imagen_url) {
+          const p = extractStoragePath(item.imagen_url);
+          if (p) pathsToRemove.add(p);
+        }
+        if (Array.isArray(item.variantes)) {
+          item.variantes.forEach((v) => {
+            if (v && v.imagen_url) {
+              const p = extractStoragePath(v.imagen_url);
+              if (p) pathsToRemove.add(p);
+            }
+          });
+        }
+      }
+    };
+
+    // 1. Recolectar rutas del parámetro pasado
+    collectUrls(productOrImages);
+
+    // 2. Si no se pasaron imágenes o producto completo, consultar la fila antes de eliminarla
+    if (pathsToRemove.size === 0) {
       try {
-        const parts = imageUrl.split('imagenes-productos/');
-        if (parts.length > 1) {
-          const path = parts[1];
-          await supabase.storage.from('imagenes-productos').remove([path]);
+        const { data: currentProduct } = await supabase
+          .from('productos')
+          .select('*')
+          .eq('id', id)
+          .single();
+        if (currentProduct) {
+          collectUrls(currentProduct);
+          const normVars = normalizeProductVariants(currentProduct);
+          collectUrls(normVars);
         }
       } catch (err) {
-        console.warn('No se pudo eliminar el archivo físico en Storage:', err);
+        console.warn('No se pudo precargar la prenda para extraer fotos antes de borrar:', err);
       }
     }
 
+    // 3. Eliminar físicamente los archivos del Storage de Supabase
+    const pathsArray = Array.from(pathsToRemove);
+    if (pathsArray.length > 0) {
+      try {
+        console.info('Eliminando archivos físicos asociados en Supabase Storage:', pathsArray);
+        const { data: removedData, error: removeError } = await supabase.storage
+          .from('imagenes-productos')
+          .remove(pathsArray);
+
+        if (removeError) {
+          console.warn('Advertencia al eliminar archivos en Storage:', removeError);
+        } else {
+          console.info('Archivos de imagen eliminados de Storage:', removedData);
+        }
+      } catch (err) {
+        console.warn('No se pudo eliminar archivos físicos en Storage:', err);
+      }
+    }
+
+    // 4. Eliminar el registro en la tabla 'productos'
     const { error } = await supabase
       .from('productos')
       .delete()

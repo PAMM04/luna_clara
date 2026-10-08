@@ -12,17 +12,21 @@ export default function ProductCard({ product, onSelectProduct }) {
 
   // Buscar la variante que coincida con el color activo
   const activeVariant = variants.find(
-    (v) => v.color?.toLowerCase() === activeColor?.toLowerCase() && v.imagen_url
-  );
+    (v) => v.color?.toLowerCase() === activeColor?.toLowerCase()
+  ) || variants[0];
+
+  const currentSizes = (activeVariant && Array.isArray(activeVariant.tallas) && activeVariant.tallas.length > 0)
+    ? activeVariant.tallas
+    : (product.tallas || []);
 
   const displayImage = activeVariant?.imagen_url || product.imagen_url || 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=800&q=80';
 
   const isOutOfStock = !product.disponible || (product.cantidad_disponible !== undefined && product.cantidad_disponible <= 0);
 
-  // Generar link WhatsApp directo con el color actualmente activo
+  // Generar link WhatsApp directo con el color actualmente activo y su primera talla disponible
   const quickWhatsAppUrl = isOutOfStock
     ? '#'
-    : generateWhatsAppOrderUrl(product, '', activeColor);
+    : generateWhatsAppOrderUrl(product, currentSizes[0] || '', activeColor);
 
   const handleCardClick = () => {
     onSelectProduct({
@@ -158,13 +162,13 @@ export default function ProductCard({ product, onSelectProduct }) {
 
         {/* Tallas y Variantes de Color */}
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.1rem' }}>
-          {/* Tallas */}
-          {product.tallas && product.tallas.length > 0 && (
+          {/* Tallas del color activo */}
+          {currentSizes.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.72rem', color: 'var(--color-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
-                Tallas:
+                Tallas {activeColor ? `(${activeColor}):` : ':'}
               </span>
-              {product.tallas.map((talla, idx) => (
+              {currentSizes.map((talla, idx) => (
                 <span key={idx} className="badge-tag">
                   {talla}
                 </span>

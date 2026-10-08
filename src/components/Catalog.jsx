@@ -1,12 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ProductCard from './ProductCard';
-import { Search, SlidersHorizontal, RotateCcw, Sparkles } from 'lucide-react';
+import ScrollToTop from './ScrollToTop';
+import { Search, SlidersHorizontal, RotateCcw, Sparkles, ChevronDown, Layers } from 'lucide-react';
+
+const PAGE_SIZE = 10;
 
 export default function Catalog({ products, onSelectProduct, loading }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSizeFilter, setSelectedSizeFilter] = useState('ALL');
   const [selectedAvailabilityFilter, setSelectedAvailabilityFilter] = useState('ALL'); // 'ALL', 'AVAILABLE', 'SOLDOUT'
   const [sortBy, setSortBy] = useState('newest'); // 'newest', 'price-asc', 'price-desc'
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef(null);
 
   // Recolectar todas las tallas únicas presentes en los productos
   const availableSizes = useMemo(() => {
@@ -59,11 +64,51 @@ export default function Catalog({ products, onSelectProduct, loading }) {
 
   const hasActiveFilters = searchQuery !== '' || selectedSizeFilter !== 'ALL' || selectedAvailabilityFilter !== 'ALL' || sortBy !== 'newest';
 
+  // Reiniciar conteo a 10 cada vez que cambien los filtros o búsqueda
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [searchQuery, selectedSizeFilter, selectedAvailabilityFilter, sortBy]);
+
+  // Lista recortada de prendas cargadas progresivamente
+  const visibleProducts = useMemo(() => {
+    return filteredProducts.slice(0, visibleCount);
+  }, [filteredProducts, visibleCount]);
+
+  const hasMore = visibleCount < filteredProducts.length;
+
+  // Detección de scroll con IntersectionObserver para cargar automáticamente de 10 en 10
+  useEffect(() => {
+    if (!hasMore || loading) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, filteredProducts.length));
+        }
+      },
+      { rootMargin: '300px 0px', threshold: 0.05 }
+    );
+
+    const currentSentinel = sentinelRef.current;
+    if (currentSentinel) {
+      observer.observe(currentSentinel);
+    }
+
+    return () => {
+      if (currentSentinel) observer.unobserve(currentSentinel);
+    };
+  }, [hasMore, loading, filteredProducts.length]);
+
+  const handleLoadMore = () => {
+    setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, filteredProducts.length));
+  };
+
   const resetFilters = () => {
     setSearchQuery('');
     setSelectedSizeFilter('ALL');
     setSelectedAvailabilityFilter('ALL');
     setSortBy('newest');
+    setVisibleCount(PAGE_SIZE);
   };
 
   return (
@@ -284,17 +329,77 @@ export default function Catalog({ products, onSelectProduct, loading }) {
           </div>
         )}
 
-        {/* Grilla de Productos */}
+        {/* Grilla de Productos con Carga Progresiva de 10 en 10 */}
         {!loading && filteredProducts.length > 0 && (
-          <div className="product-grid">
-            {filteredProducts.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onSelectProduct={onSelectProduct}
-              />
-            ))}
-          </div>
+          <>
+            <div className="product-grid">
+              {visibleProducts.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onSelectProduct={onSelectProduct}
+                />
+              ))}
+            </div>
+
+            {/* Elemento centinela para detectar cuando el usuario scrollea hacia abajo */}
+            <div 
+              ref={sentinelRef} 
+              style={{ height: '8px', width: '100%', margin: '1rem 0', pointerEvents: 'none', opacity: 0 }} 
+              aria-hidden="true" 
+            />
+
+            {/* Barra informativa de progreso y botón táctil para celular */}
+            <div style={{
+              marginTop: '2.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.85rem'
+            }}>
+              <div style={{
+                fontSize: '0.82rem',
+                color: 'var(--color-muted)',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                background: 'var(--color-white)',
+                padding: '0.45rem 1rem',
+                borderRadius: 'var(--radius-full)',
+                border: '1px solid var(--color-sand)',
+                boxShadow: 'var(--shadow-sm)'
+              }}>
+                <Layers size={15} color="var(--gold-primary)" />
+                <span>Mostrando <strong>{visibleProducts.length}</strong> de <strong>{filteredProducts.length}</strong> prendas</span>
+              </div>
+
+              {hasMore ? (
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  className="btn btn-outline"
+                  style={{
+                    padding: '0.75rem 1.75rem',
+                    fontSize: '0.86rem',
+                    borderRadius: 'var(--radius-full)',
+                    background: 'var(--color-white)',
+                    boxShadow: 'var(--shadow-sm)',
+                    fontWeight: 600,
+                    gap: '0.5rem'
+                  }}
+                >
+                  <ChevronDown size={17} />
+                  <span>Cargar 10 prendas más</span>
+                </button>
+              ) : filteredProducts.length > PAGE_SIZE ? (
+                <span style={{ fontSize: '0.8rem', color: 'var(--gold-dark)', fontWeight: 600, marginTop: '0.25rem' }}>
+                  ✓ Has explorado todas las prendas seleccionadas
+                </span>
+              ) : null}
+            </div>
+          </>
         )}
 
         {/* Empty State */}
@@ -325,6 +430,9 @@ export default function Catalog({ products, onSelectProduct, loading }) {
         )}
 
       </div>
+
+      {/* Botón flotante para volver arriba (ubicado sobre el botón de WhatsApp en celular) */}
+      <ScrollToTop bottomOffset="5.8rem" />
     </section>
   );
 }

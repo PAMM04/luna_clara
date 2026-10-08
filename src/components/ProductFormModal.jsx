@@ -49,10 +49,13 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
 
       // Cargar variantes normalizadas
       const normVariants = normalizeProductVariants(product);
+      const productSizes = Array.isArray(product.tallas) && product.tallas.length > 0 ? [...product.tallas] : ['S', 'M', 'L'];
+
       if (normVariants && normVariants.length > 0) {
         setVariantes(normVariants.map((v, idx) => ({
           id: v.id || `var-${idx}-${Date.now()}`,
           color: v.color || 'Color',
+          tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? [...v.tallas] : [...productSizes],
           imagen_url: v.imagen_url || '',
           file: null,
           previewUrl: v.imagen_url || '',
@@ -63,6 +66,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
         setVariantes([{
           id: `var-0-${Date.now()}`,
           color: 'Único',
+          tallas: [...productSizes],
           imagen_url: product.imagen_url || '',
           file: null,
           previewUrl: product.imagen_url || '',
@@ -82,11 +86,12 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
       setDisponible(true);
       setTallas(['S', 'M', 'L']);
       
-      // Una primera variante lista para capturar foto en móvil
+      // Una primera variante lista para capturar foto en móvil con tallas iniciales
       setVariantes([
         {
           id: `var-init-${Date.now()}`,
           color: 'Rosa',
+          tallas: ['S', 'M', 'L'],
           imagen_url: '',
           file: null,
           previewUrl: '',
@@ -101,13 +106,15 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
     }
   }, [product]);
 
-  // Manejo de Tallas
+  // Manejo de Tallas Base
   const toggleSize = (size) => {
+    let nextSizes;
     if (tallas.includes(size)) {
-      setTallas(tallas.filter((s) => s !== size));
+      nextSizes = tallas.filter((s) => s !== size);
     } else {
-      setTallas([...tallas, size]);
+      nextSizes = [...tallas, size];
     }
+    setTallas(nextSizes);
   };
 
   const handleAddCustomSize = (e) => {
@@ -116,6 +123,61 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
       setTallas([...tallas, customSizeInput.trim().toUpperCase()]);
       setCustomSizeInput('');
     }
+  };
+
+  // Manejo de Tallas Específicas por Color/Variante
+  const toggleVariantSize = (variantId, size) => {
+    setVariantes((prev) =>
+      prev.map((v) => {
+        if (v.id === variantId) {
+          const currentSizes = Array.isArray(v.tallas) ? v.tallas : [];
+          const nextSizes = currentSizes.includes(size)
+            ? currentSizes.filter((s) => s !== size)
+            : [...currentSizes, size];
+          return { ...v, tallas: nextSizes };
+        }
+        return v;
+      })
+    );
+  };
+
+  const addCustomSizeToVariant = (variantId, sizeName) => {
+    const cleanSize = sizeName.trim().toUpperCase();
+    if (!cleanSize) return;
+    setVariantes((prev) =>
+      prev.map((v) => {
+        if (v.id === variantId) {
+          const currentSizes = Array.isArray(v.tallas) ? v.tallas : [];
+          if (!currentSizes.includes(cleanSize)) {
+            return { ...v, tallas: [...currentSizes, cleanSize] };
+          }
+        }
+        return v;
+      })
+    );
+  };
+
+  const copyVariantSizesToAll = (sourceVariantId) => {
+    const source = variantes.find((v) => v.id === sourceVariantId);
+    if (!source || !source.tallas || source.tallas.length === 0) {
+      addToast({
+        type: 'info',
+        title: 'Sin tallas para copiar',
+        message: 'Esta variante no tiene tallas seleccionadas.'
+      });
+      return;
+    }
+    setVariantes((prev) =>
+      prev.map((v) => ({
+        ...v,
+        tallas: [...source.tallas]
+      }))
+    );
+    addToast({
+      type: 'success',
+      title: 'Tallas sincronizadas',
+      message: `Se aplicaron las tallas de "${source.color}" (${source.tallas.join(', ')}) a todas las variantes.`
+    });
   };
 
   // Manejo de Variantes
@@ -138,6 +200,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
     const newVar = {
       id: `var-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       color: cleanName,
+      tallas: tallas.length > 0 ? [...tallas] : ['S', 'M', 'L'],
       imagen_url: '',
       file: null,
       previewUrl: '',
@@ -307,15 +370,24 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
         return 0;
       });
 
+      // Unión de tallas de todas las variantes para filtros globales
+      const unionSizes = Array.from(new Set([
+        ...tallas,
+        ...sortedVariants.flatMap((v) => v.tallas || [])
+      ])).filter(Boolean);
+
       const payload = {
         nombre: nombre.trim(),
         descripcion: descripcion.trim(),
         precio: parseFloat(precio),
         cantidad_disponible: parseInt(cantidadDisponible, 10) || 0,
         disponible,
-        tallas,
+        tallas: unionSizes.length > 0 ? unionSizes : ['S', 'M', 'L'],
         colores: sortedVariants.map((v) => v.color.trim()).filter(Boolean),
-        variantes: sortedVariants,
+        variantes: sortedVariants.map((v) => ({
+          ...v,
+          tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? v.tallas : (unionSizes.length > 0 ? unionSizes : ['S', 'M', 'L'])
+        })),
         imagen_url: coverPreview || ''
       };
 
@@ -454,9 +526,17 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
 
           {/* 3. Tallas Disponibles (Multi-selector táctil) */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.4rem' }}>
-              Tallas Disponibles para este modelo
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)' }}>
+                Tallas Base del Modelo (Plantilla general)
+              </label>
+              <span style={{ fontSize: '0.72rem', color: 'var(--gold-dark)', fontWeight: 600 }}>
+                Personalizable por color más abajo
+              </span>
+            </div>
+            <p style={{ fontSize: '0.74rem', color: 'var(--color-muted)', marginBottom: '0.5rem' }}>
+              Define las tallas generales de la prenda. Más abajo puedes personalizar tallas únicas por cada color (ej: Negro M y 2, Verde XL y S).
+            </p>
             <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
               {COMMON_SIZES.map((size) => {
                 const isSelected = tallas.includes(size);
@@ -874,6 +954,149 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                           )}
                         </div>
                       )}
+                    </div>
+
+                    {/* ============================================================== */}
+                    {/* TALLAS ESPECÍFICAS PARA ESTA VARIANTE DE COLOR */}
+                    {/* ============================================================== */}
+                    <div style={{
+                      marginTop: '0.4rem',
+                      padding: '0.75rem',
+                      background: 'rgba(247, 245, 240, 0.75)',
+                      border: '1px solid var(--color-sand)',
+                      borderRadius: 'var(--radius-sm)'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '0.45rem',
+                        flexWrap: 'wrap',
+                        gap: '0.35rem'
+                      }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-noir)' }}>
+                          Tallas disponibles para {v.color}:
+                        </div>
+
+                        {variantes.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => copyVariantSizesToAll(v.id)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--gold-dark)',
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textDecoration: 'underline'
+                            }}
+                            title="Copiar estas mismas tallas a todas las demás variantes de color"
+                          >
+                            Copiar estas tallas a todos los colores
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Chips de tallas comunes para activar/desactivar al tacto */}
+                      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginBottom: '0.45rem' }}>
+                        {COMMON_SIZES.map((size) => {
+                          const isSelected = (v.tallas || []).includes(size);
+                          return (
+                            <button
+                              key={size}
+                              type="button"
+                              onClick={() => toggleVariantSize(v.id, size)}
+                              style={{
+                                padding: '0.28rem 0.6rem',
+                                borderRadius: 'var(--radius-sm)',
+                                border: isSelected ? '1.5px solid var(--gold-primary)' : '1px solid var(--color-sand)',
+                                background: isSelected ? 'var(--gold-subtle)' : 'var(--color-white)',
+                                color: isSelected ? 'var(--gold-dark)' : 'var(--color-charcoal)',
+                                fontWeight: isSelected ? 700 : 500,
+                                fontSize: '0.76rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                transition: 'all 0.12s ease'
+                              }}
+                            >
+                              {isSelected && <Check size={11} color="var(--gold-dark)" />}
+                              <span>{size}</span>
+                            </button>
+                          );
+                        })}
+
+                        {/* Tallas personalizadas específicas de esta variante que no están en COMMON_SIZES (ej. 2, 38) */}
+                        {(v.tallas || [])
+                          .filter((s) => !COMMON_SIZES.includes(s))
+                          .map((customSize) => (
+                            <button
+                              key={customSize}
+                              type="button"
+                              onClick={() => toggleVariantSize(v.id, customSize)}
+                              style={{
+                                padding: '0.28rem 0.6rem',
+                                borderRadius: 'var(--radius-sm)',
+                                border: '1.5px solid var(--gold-primary)',
+                                background: 'var(--gold-subtle)',
+                                color: 'var(--gold-dark)',
+                                fontWeight: 700,
+                                fontSize: '0.76rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}
+                              title="Toca para quitar esta talla personalizada"
+                            >
+                              <Check size={11} color="var(--gold-dark)" />
+                              <span>{customSize}</span>
+                              <span style={{ fontSize: '0.72rem', marginLeft: '2px', opacity: 0.7 }}>✕</span>
+                            </button>
+                          ))}
+                      </div>
+
+                      {/* Mini-input para añadir talla personalizada a este color (ej. "2", "38", "XL") */}
+                      <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder={`Otra talla para ${v.color} (ej. 2, 38)...`}
+                          id={`input-size-${v.id}`}
+                          className="input-field"
+                          style={{ padding: '0.35rem 0.6rem', fontSize: '0.76rem', flex: '1 1 150px' }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const val = e.currentTarget.value.trim();
+                              if (val) {
+                                addCustomSizeToVariant(v.id, val);
+                                e.currentTarget.value = '';
+                              }
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const input = document.getElementById(`input-size-${v.id}`);
+                            if (input && input.value.trim()) {
+                              addCustomSizeToVariant(v.id, input.value.trim());
+                              input.value = '';
+                            }
+                          }}
+                          className="btn btn-outline"
+                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.76rem', whiteSpace: 'nowrap' }}
+                        >
+                          <Plus size={12} />
+                          <span>Añadir</span>
+                        </button>
+                      </div>
+
+                      <div style={{ marginTop: '0.3rem', fontSize: '0.7rem', color: 'var(--color-muted)' }}>
+                        Seleccionadas: <strong style={{ color: 'var(--gold-dark)' }}>{(v.tallas || []).length > 0 ? (v.tallas || []).join(', ') : 'Ninguna (el cliente no verá tallas para este color)'}</strong>
+                      </div>
                     </div>
                   </div>
                 );

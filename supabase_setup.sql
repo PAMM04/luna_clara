@@ -19,9 +19,12 @@ CREATE TABLE IF NOT EXISTS public.productos (
     imagen_url TEXT NOT NULL
 );
 
--- Si la tabla ya fue creada previamente, ejecuta esta línea para habilitar variantes con foto:
+-- Si la tabla ya fue creada previamente, ejecuta esta línea para habilitar variantes con foto y tallas por color:
 ALTER TABLE public.productos 
 ADD COLUMN IF NOT EXISTS variantes JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- Nota de Estructura de 'variantes':
+-- Cada elemento contiene: { "id": "v1", "color": "Negro", "tallas": ["M", "2"], "imagen_url": "https://...", "stock": 4 }
 
 
 -- 2. HABILITAR ROW LEVEL SECURITY (RLS)

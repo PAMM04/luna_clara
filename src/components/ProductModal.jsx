@@ -13,32 +13,62 @@ export default function ProductModal({ product, onClose, isPreview = false }) {
 
   useEffect(() => {
     if (product) {
-      // Talla por defecto
-      if (product.tallas && product.tallas.length > 0) {
-        setSelectedSize(product.tallas[0]);
+      // Color por defecto: si viene preseleccionado o el primer color disponible
+      let initialColor = '';
+      if (product.defaultSelectedColor) {
+        initialColor = product.defaultSelectedColor;
+      } else if (variants.length > 0 && variants[0].color) {
+        initialColor = variants[0].color;
+      } else if (product.colores && product.colores.length > 0) {
+        initialColor = product.colores[0];
+      }
+      setSelectedColor(initialColor);
+
+      // Calcular tallas para el color inicial
+      const targetVariant = variants.find((v) => v.color?.toLowerCase() === initialColor?.toLowerCase()) || variants[0];
+      const targetSizes = (targetVariant && Array.isArray(targetVariant.tallas) && targetVariant.tallas.length > 0)
+        ? targetVariant.tallas
+        : (product.tallas || []);
+
+      if (targetSizes.length > 0) {
+        setSelectedSize(targetSizes[0]);
       } else {
         setSelectedSize('');
-      }
-
-      // Color por defecto: si viene preseleccionado o el primer color disponible
-      if (product.defaultSelectedColor) {
-        setSelectedColor(product.defaultSelectedColor);
-      } else if (variants.length > 0 && variants[0].color) {
-        setSelectedColor(variants[0].color);
-      } else if (product.colores && product.colores.length > 0) {
-        setSelectedColor(product.colores[0]);
-      } else {
-        setSelectedColor('');
       }
     }
   }, [product, variants]);
 
-  if (!product) return null;
+  // Encontrar la variante activa para el color seleccionado (o fallback a la primera)
+  const activeVariant = useMemo(() => {
+    return variants.find(
+      (v) => v.color?.toLowerCase() === selectedColor?.toLowerCase()
+    ) || variants[0];
+  }, [variants, selectedColor]);
 
-  // Encontrar la variante activa para el color seleccionado
-  const activeVariant = variants.find(
-    (v) => v.color?.toLowerCase() === selectedColor?.toLowerCase() && v.imagen_url
-  );
+  // Tallas disponibles para el color actualmente seleccionado
+  const availableSizes = useMemo(() => {
+    if (activeVariant && Array.isArray(activeVariant.tallas) && activeVariant.tallas.length > 0) {
+      return activeVariant.tallas;
+    }
+    if (Array.isArray(product?.tallas) && product.tallas.length > 0) {
+      return product.tallas;
+    }
+    return [];
+  }, [activeVariant, product]);
+
+  const handleSelectColor = (colorName) => {
+    setSelectedColor(colorName);
+    const targetVariant = variants.find((v) => v.color?.toLowerCase() === colorName.toLowerCase());
+    const targetSizes = (targetVariant && Array.isArray(targetVariant.tallas) && targetVariant.tallas.length > 0)
+      ? targetVariant.tallas
+      : (product?.tallas || []);
+
+    if (targetSizes.length > 0 && (!selectedSize || !targetSizes.includes(selectedSize))) {
+      setSelectedSize(targetSizes[0]);
+    }
+  };
+
+  if (!product) return null;
 
   // Imagen activa a mostrar: si la variante tiene foto, se muestra; si no, la imagen principal
   const currentDisplayImage = activeVariant?.imagen_url || product.imagen_url || 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1000&q=80';
@@ -265,49 +295,11 @@ export default function ProductModal({ product, onClose, isPreview = false }) {
               </div>
             )}
 
-            {/* Selector interactivo de Tallas */}
-            {product.tallas && product.tallas.length > 0 && (
+            {/* 1. Selector interactivo de Colores con Miniaturas de Variante */}
+            {((product.colores && product.colores.length > 0) || variants.length > 0) && (
               <div style={{ marginBottom: '1.25rem' }}>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-noir)', marginBottom: '0.5rem' }}>
-                  Selecciona tu Talla: <span style={{ color: 'var(--gold-dark)', fontWeight: 700 }}>{selectedSize}</span>
-                </label>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  {product.tallas.map((talla, idx) => {
-                    const isSelected = selectedSize === talla;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setSelectedSize(talla)}
-                        style={{
-                          padding: '0.5rem 1rem',
-                          borderRadius: 'var(--radius-md)',
-                          border: isSelected ? '2px solid var(--gold-primary)' : '1px solid var(--color-sand)',
-                          background: isSelected ? 'var(--gold-subtle)' : 'var(--color-white)',
-                          color: isSelected ? 'var(--gold-dark)' : 'var(--color-charcoal)',
-                          fontWeight: isSelected ? 700 : 500,
-                          cursor: 'pointer',
-                          fontSize: '0.88rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.35rem',
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        {isSelected && <Check size={14} color="var(--gold-dark)" />}
-                        <span>{talla}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Selector interactivo de Colores con Miniaturas de Variante */}
-            {((product.colores && product.colores.length > 0) || variants.length > 0) && (
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-noir)', marginBottom: '0.5rem' }}>
-                  Color seleccionado: <span style={{ color: 'var(--gold-dark)', fontWeight: 700 }}>{selectedColor}</span>
+                  1. Selecciona Color: <span style={{ color: 'var(--gold-dark)', fontWeight: 700 }}>{selectedColor}</span>
                   <span style={{ fontSize: '0.74rem', color: 'var(--color-muted)', fontWeight: 400, marginLeft: '0.5rem' }}>
                     (Toca un color para cambiar la foto)
                   </span>
@@ -315,16 +307,15 @@ export default function ProductModal({ product, onClose, isPreview = false }) {
                 
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   {(product.colores && product.colores.length > 0 ? product.colores : variants.map((v) => v.color)).map((color, idx) => {
-                    const isSelected = selectedColor === color;
-                    // Buscar si tiene foto de variante para mostrar mini-muestra
-                    const variantObj = variants.find((v) => v.color?.toLowerCase() === color.toLowerCase());
+                    const isSelected = selectedColor?.toLowerCase() === color?.toLowerCase();
+                    const variantObj = variants.find((v) => v.color?.toLowerCase() === color?.toLowerCase());
                     const swatchImg = variantObj?.imagen_url;
 
                     return (
                       <button
                         key={idx}
                         type="button"
-                        onClick={() => setSelectedColor(color)}
+                        onClick={() => handleSelectColor(color)}
                         style={{
                           padding: swatchImg ? '0.35rem 0.85rem 0.35rem 0.45rem' : '0.45rem 0.9rem',
                           borderRadius: 'var(--radius-md)',
@@ -363,6 +354,61 @@ export default function ProductModal({ product, onClose, isPreview = false }) {
                 </div>
               </div>
             )}
+
+            {/* 2. Selector interactivo de Tallas específico para el color seleccionado */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.35rem' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-noir)' }}>
+                  2. Talla disponible en {selectedColor || 'este color'}: <span style={{ color: 'var(--gold-dark)', fontWeight: 700 }}>{selectedSize || 'Por elegir'}</span>
+                </label>
+                <span style={{ fontSize: '0.72rem', color: 'var(--gold-dark)', fontWeight: 600 }}>
+                  {availableSizes.length > 0 ? `${availableSizes.length} talla(s) para este color` : 'Sin tallas específicas'}
+                </span>
+              </div>
+
+              {availableSizes.length > 0 ? (
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {availableSizes.map((talla, idx) => {
+                    const isSelected = selectedSize === talla;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSelectedSize(talla)}
+                        style={{
+                          padding: '0.5rem 1rem',
+                          borderRadius: 'var(--radius-md)',
+                          border: isSelected ? '2px solid var(--gold-primary)' : '1px solid var(--color-sand)',
+                          background: isSelected ? 'var(--gold-subtle)' : 'var(--color-white)',
+                          color: isSelected ? 'var(--gold-dark)' : 'var(--color-charcoal)',
+                          fontWeight: isSelected ? 700 : 500,
+                          cursor: 'pointer',
+                          fontSize: '0.88rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {isSelected && <Check size={14} color="var(--gold-dark)" />}
+                        <span>{talla}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{
+                  padding: '0.65rem 0.85rem',
+                  background: 'var(--color-cream)',
+                  border: '1px dashed var(--color-sand)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.8rem',
+                  color: 'var(--color-muted)'
+                }}>
+                  Prenda de corte versátil / Consulta tallas disponibles al pedir por WhatsApp.
+                </div>
+              )}
+            </div>
 
             {/* Botón Principal WhatsApp */}
             <div style={{ marginTop: 'auto' }}>
