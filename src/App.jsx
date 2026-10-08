@@ -221,6 +221,7 @@ export default function App() {
               setDeletingProduct(product);
               setIsDeleteModalOpen(true);
             }}
+            onPreviewProduct={(product) => setSelectedProduct(product)}
             onReloadProducts={loadProducts}
             addToast={addToast}
           />
@@ -271,11 +272,12 @@ export default function App() {
         </>
       )}
 
-      {/* Modal de Detalle de Prenda (Cliente) */}
+      {/* Modal de Detalle de Prenda (Cliente / Vista Previa) */}
       {selectedProduct && (
         <ProductModal
           product={selectedProduct}
           onClose={() => setSelectedProduct(null)}
+          isPreview={currentView === 'admin'}
         />
       )}
 

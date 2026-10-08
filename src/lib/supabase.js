@@ -435,15 +435,23 @@ export function onAdminAuthStateChange(callback) {
 }
 
 /**
+ * Formateador unificado de precios para Luna Clara en Bolivianos (Bs.)
+ */
+export function formatPrice(price) {
+  const num = Number(price) || 0;
+  return `Bs. ${num.toFixed(2)}`;
+}
+
+/**
  * Generador de enlace directo a WhatsApp según especificaciones del documento:
- * https://wa.me/<NUMERO_TELEFONO>?text=Hola!%20Deseo%20comprar%20la%20siguiente%20prenda:%0A*Producto:*%20{nombre}%0A*Precio:*%20${precio}%0A*Tallas:*%20{tallas_seleccionadas}
+ * https://wa.me/<NUMERO_TELEFONO>?text=Hola!%20Deseo%20comprar%20la%20siguiente%20prenda:%0A*Producto:*%20{nombre}%0A*Precio:*%20Bs.%20{precio}%0A*Tallas:*%20{tallas_seleccionadas}
  */
 export function generateWhatsAppOrderUrl(product, selectedSize = '', selectedColor = '') {
   const phone = WHATSAPP_PHONE.replace(/[^0-9]/g, '');
   
   let text = `¡Hola! Deseo comprar la siguiente prenda de ${STORE_NAME}:\n`;
   text += `*Producto:* ${product.nombre}\n`;
-  text += `*Precio:* $${Number(product.precio).toFixed(2)}\n`;
+  text += `*Precio:* Bs. ${Number(product.precio).toFixed(2)}\n`;
   
   if (selectedSize) {
     text += `*Talla seleccionada:* ${selectedSize}\n`;
@@ -461,3 +469,4 @@ export function generateWhatsAppOrderUrl(product, selectedSize = '', selectedCol
 
   return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
 }
+

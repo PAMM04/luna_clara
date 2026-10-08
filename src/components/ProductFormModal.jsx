@@ -249,7 +249,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-charcoal)', marginBottom: '0.4rem' }}>
-                Precio ($ / Bs.) *
+                Precio (Bs.) *
               </label>
               <input
                 type="number"
@@ -260,7 +260,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                   setPrecio(e.target.value);
                   if (errors.precio) setErrors({ ...errors, precio: null });
                 }}
-                placeholder="Ej: 189.90"
+                placeholder="Ej: 180.00"
                 className="input-field"
                 required
               />

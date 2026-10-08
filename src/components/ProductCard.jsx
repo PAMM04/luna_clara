@@ -1,5 +1,5 @@
 import React from 'react';
-import { generateWhatsAppOrderUrl } from '../lib/supabase';
+import { generateWhatsAppOrderUrl, formatPrice } from '../lib/supabase';
 import { MessageCircle, Eye, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function ProductCard({ product, onSelectProduct }) {
@@ -10,13 +10,6 @@ export default function ProductCard({ product, onSelectProduct }) {
     ? '#'
     : generateWhatsAppOrderUrl(product);
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('es-BO', {
-      style: 'currency',
-      currency: 'BOB',
-      minimumFractionDigits: 2
-    }).format(price).replace('BOB', '$');
-  };
 
   return (
     <article className="product-card">

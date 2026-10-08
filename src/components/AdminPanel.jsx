@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { adminLogout, toggleProductAvailability, isSupabaseConfigured, STORE_NAME } from '../lib/supabase';
 import { 
   Plus, LogOut, Search, Edit3, Trash2, CheckCircle2, 
-  AlertCircle, Package, Layers, ArrowLeft, ExternalLink, RefreshCw
+  AlertCircle, Package, Layers, ArrowLeft, ExternalLink, RefreshCw, Eye
 } from 'lucide-react';
 
 export default function AdminPanel({ 
@@ -13,6 +13,7 @@ export default function AdminPanel({
   onOpenCreateModal, 
   onOpenEditModal, 
   onOpenDeleteModal, 
+  onPreviewProduct,
   onReloadProducts, 
   addToast 
 }) {
@@ -98,11 +99,7 @@ export default function AdminPanel({
   };
 
   const formatPrice = (price) => {
-    return new Intl.NumberFormat('es-BO', {
-      style: 'currency',
-      currency: 'BOB',
-      minimumFractionDigits: 2
-    }).format(price).replace('BOB', '$');
+    return `Bs. ${Number(price || 0).toFixed(2)}`;
   };
 
   return (
@@ -522,6 +519,25 @@ export default function AdminPanel({
                         {/* Acciones */}
                         <td style={{ padding: '0.9rem 1rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                            <button
+                              onClick={() => onPreviewProduct && onPreviewProduct(p)}
+                              style={{
+                                background: 'var(--color-cream)',
+                                border: '1px solid var(--color-sand)',
+                                color: 'var(--color-charcoal)',
+                                padding: '0.45rem',
+                                borderRadius: 'var(--radius-sm)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                transition: 'all 0.15s ease'
+                              }}
+                              title="Visualizar publicación"
+                              aria-label="Ver cómo queda la publicación"
+                            >
+                              <Eye size={15} />
+                            </button>
+
                             <button
                               onClick={() => onOpenEditModal(p)}
                               style={{

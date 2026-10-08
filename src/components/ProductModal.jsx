@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { generateWhatsAppOrderUrl } from '../lib/supabase';
-import { X, MessageCircle, AlertCircle, CheckCircle2, ShieldCheck, Sparkles, Check } from 'lucide-react';
+import { generateWhatsAppOrderUrl, formatPrice } from '../lib/supabase';
+import { X, MessageCircle, AlertCircle, CheckCircle2, ShieldCheck, Sparkles, Check, Eye } from 'lucide-react';
 
-export default function ProductModal({ product, onClose }) {
+export default function ProductModal({ product, onClose, isPreview = false }) {
   const [selectedSize, setSelectedSize] = useState('');
   const [selectedColor, setSelectedColor] = useState('');
 
@@ -30,14 +30,6 @@ export default function ProductModal({ product, onClose }) {
     ? '#'
     : generateWhatsAppOrderUrl(product, selectedSize, selectedColor);
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('es-BO', {
-      style: 'currency',
-      currency: 'BOB',
-      minimumFractionDigits: 2
-    }).format(price).replace('BOB', '$');
-  };
-
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true">
       <div 
@@ -45,12 +37,43 @@ export default function ProductModal({ product, onClose }) {
         onClick={(e) => e.stopPropagation()} 
         style={{ maxWidth: '780px', maxHeight: '92vh', overflowY: 'auto' }}
       >
+        {/* Banner informativo si está en modo visualización / administrador */}
+        {isPreview && (
+          <div style={{
+            background: 'linear-gradient(135deg, var(--color-noir) 0%, #292524 100%)',
+            color: 'var(--gold-light)',
+            padding: '0.65rem 1.25rem',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid rgba(197, 160, 89, 0.3)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Eye size={16} color="var(--gold-primary)" />
+              <span>Vista previa de publicación: Así verán tus clientes esta prenda</span>
+            </div>
+            <span style={{
+              background: 'rgba(197, 160, 89, 0.2)',
+              color: 'var(--gold-light)',
+              padding: '0.2rem 0.6rem',
+              borderRadius: '999px',
+              fontSize: '0.72rem',
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase'
+            }}>
+              Panel Administrador
+            </span>
+          </div>
+        )}
+
         {/* Botón cerrar flotante */}
         <button
           onClick={onClose}
           style={{
             position: 'absolute',
-            top: '1rem',
+            top: isPreview ? '3.2rem' : '1rem',
             right: '1rem',
             zIndex: 10,
             background: 'rgba(255, 255, 255, 0.9)',
