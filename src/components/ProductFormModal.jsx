@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { createProduct, updateProduct, normalizeProductVariants } from '../lib/supabase';
+import { createProduct, updateProduct, normalizeProductVariants, resolveSupabaseImageUrl, getProductThumbnailUrl } from '../lib/supabase';
 import { 
   X, Upload, Plus, Trash2, Check, AlertCircle, 
   Camera, Image as ImageIcon, Star, Loader2, Zap 
@@ -50,14 +50,14 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
       setDisponible(product.disponible !== undefined ? product.disponible : true);
       setTallas(Array.isArray(product.tallas) ? [...product.tallas] : []);
 
-      // Cargar variantes normalizadas y descartar URLs blob expiradas
-      const safeProductImg = (product.imagen_url && !product.imagen_url.startsWith('blob:')) ? product.imagen_url : '';
+      // Cargar variantes normalizadas y resolver imágenes auténticas de Supabase
+      const safeProductImg = resolveSupabaseImageUrl(product.imagen_url) || getProductThumbnailUrl(product, '');
       const normVariants = normalizeProductVariants(product);
       const productSizes = Array.isArray(product.tallas) && product.tallas.length > 0 ? [...product.tallas] : ['S', 'M', 'L'];
 
       if (normVariants && normVariants.length > 0) {
         setVariantes(normVariants.map((v, idx) => {
-          const safeVarImg = (v.imagen_url && !v.imagen_url.startsWith('blob:')) ? v.imagen_url : safeProductImg;
+          const safeVarImg = resolveSupabaseImageUrl(v.imagen_url || v.url || v.path) || safeProductImg;
           return {
             id: v.id || `var-${idx}-${Date.now()}`,
             color: v.color || 'Color',

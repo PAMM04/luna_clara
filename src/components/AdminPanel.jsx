@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   adminLogout, toggleProductAvailability, isSupabaseConfigured, STORE_NAME,
-  getSafeProductImageUrl, DEFAULT_PRODUCT_IMAGE, resetLocalProducts 
+  getProductThumbnailUrl, DEFAULT_PRODUCT_IMAGE, resetLocalProducts 
 } from '../lib/supabase';
 import ScrollToTop from './ScrollToTop';
 import { 
@@ -500,11 +500,13 @@ export default function AdminPanel({
                             border: '1px solid var(--color-sand)'
                           }}>
                             <img
-                              src={getSafeProductImageUrl(p.imagen_url)}
+                              src={getProductThumbnailUrl(p)}
                               alt={p.nombre}
                               onError={(e) => {
-                                e.currentTarget.onerror = null;
-                                e.currentTarget.src = DEFAULT_PRODUCT_IMAGE;
+                                // Solo sustituir si la petición HTTP falla realmente con un error de red o 404
+                                if (e.currentTarget.src !== DEFAULT_PRODUCT_IMAGE) {
+                                  e.currentTarget.src = DEFAULT_PRODUCT_IMAGE;
+                                }
                               }}
                               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                             />

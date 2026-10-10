@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { generateWhatsAppOrderUrl, formatPrice, normalizeProductVariants, getSafeProductImageUrl, DEFAULT_PRODUCT_IMAGE } from '../lib/supabase';
+import { 
+  generateWhatsAppOrderUrl, formatPrice, normalizeProductVariants, 
+  getSafeProductImageUrl, getProductThumbnailUrl, DEFAULT_PRODUCT_IMAGE 
+} from '../lib/supabase';
 import { X, MessageCircle, AlertCircle, CheckCircle2, ShieldCheck, Sparkles, Check, Eye } from 'lucide-react';
 
 export default function ProductModal({ product, onClose, isPreview = false }) {
@@ -70,9 +73,10 @@ export default function ProductModal({ product, onClose, isPreview = false }) {
 
   if (!product) return null;
 
-  // Imagen activa a mostrar: si la variante tiene foto, se muestra; si no, la imagen principal
-  const rawModalImage = activeVariant?.imagen_url || product.imagen_url;
-  const currentDisplayImage = getSafeProductImageUrl(rawModalImage, DEFAULT_PRODUCT_IMAGE);
+  // Imagen activa a mostrar: si la variante tiene foto, se muestra; si no, la imagen principal resuelta
+  const currentDisplayImage = activeVariant?.imagen_url 
+    ? getSafeProductImageUrl(activeVariant.imagen_url) 
+    : getProductThumbnailUrl(product);
 
   const isOutOfStock = !product.disponible || (product.cantidad_disponible !== undefined && product.cantidad_disponible <= 0);
 

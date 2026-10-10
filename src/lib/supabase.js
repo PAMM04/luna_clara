@@ -25,6 +25,9 @@ export const supabase = isSupabaseConfigured()
 const LOCAL_STORAGE_KEY = 'luna_clara_demo_products_v1';
 const LOCAL_AUTH_KEY = 'luna_clara_demo_auth_session';
 
+// Bucket de Supabase Storage para imágenes de prendas
+export const STORAGE_BUCKET = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'imagenes-productos';
+
 // Imagen por defecto elegante para prendas sin imagen o con URL rota
 export const DEFAULT_PRODUCT_IMAGE = 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=800&q=80';
 
@@ -36,13 +39,97 @@ export function isBlobUrl(url) {
 }
 
 /**
+ * Resuelve la URL pública real de una imagen en Supabase Storage o formato URL:
+ * - Si es una URL absoluta ('https://...', 'http://...', 'data:...'), la retorna directamente.
+ * - Si es una URL 'blob:' efímera, retorna '' para no forzar errores net::ERR_FILE_NOT_FOUND al recargar.
+ * - Si es una ruta relativa o ID de archivo (ej. '6d2a5b6a...webp' o 'prendas/...webp'):
+ *   Genera la URL pública real usando supabase.storage.from(bucket).getPublicUrl(ruta).data.publicUrl
+ */
+export function resolveSupabaseImageUrl(pathOrUrl, bucket = STORAGE_BUCKET) {
+  if (!pathOrUrl || typeof pathOrUrl !== 'string') return '';
+  const clean = pathOrUrl.trim();
+  if (!clean || isBlobUrl(clean)) return '';
+
+  // Si ya es una URL completa o Data URL
+  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:')) {
+    return clean;
+  }
+
+  // Sanitizar ruta dentro del bucket
+  const sanitized = clean.replace(/^\/+/, '');
+  const filePath = sanitized.startsWith('prendas/') ? sanitized : `prendas/${sanitized}`;
+
+  if (supabase) {
+    try {
+      const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
+      if (data?.publicUrl) return data.publicUrl;
+    } catch (e) {
+      console.warn('Error resolviendo URL en Supabase Storage:', e);
+    }
+  }
+
+  // Fallback si no está el cliente instanciado pero existe supabaseUrl
+  if (supabaseUrl) {
+    return `${supabaseUrl}/storage/v1/object/public/${bucket}/${filePath}`;
+  }
+
+  return clean;
+}
+
+/**
+ * Lógica de selección para la miniatura auténtica de cada prenda:
+ * - Prioridad 1: Si existe prenda.imagenes_colores con elementos, tomar la URL/path del primer elemento
+ * - Prioridad 2: Si no, tomar prenda.imagen_url
+ * - Respaldo: Si prenda.imagen_url es nulo o blob, buscar en prenda.variantes (primer elemento con foto válida)
+ * - Solo si ambos son nulos o inexistentes, recurrir al placeholder por defecto.
+ */
+export function getProductThumbnailUrl(product, fallback = DEFAULT_PRODUCT_IMAGE) {
+  if (!product) return fallback;
+
+  let resolved = '';
+
+  // Prioridad 1: prenda.imagenes_colores (array JSONB con objetos { color, url } o { color, path })
+  if (Array.isArray(product.imagenes_colores) && product.imagenes_colores.length > 0) {
+    for (const item of product.imagenes_colores) {
+      const raw = typeof item === 'string' ? item : (item?.url || item?.path || item?.imagen_url || '');
+      const candidate = resolveSupabaseImageUrl(raw);
+      if (candidate) {
+        resolved = candidate;
+        break;
+      }
+    }
+  }
+
+  // Prioridad 2: prenda.imagen_url
+  if (!resolved && product.imagen_url) {
+    const candidate = resolveSupabaseImageUrl(product.imagen_url);
+    if (candidate) {
+      resolved = candidate;
+    }
+  }
+
+  // Respaldo preventivo: Si prenda.imagen_url era nulo o un blob inválido, buscar en prenda.variantes
+  if (!resolved && Array.isArray(product.variantes) && product.variantes.length > 0) {
+    for (const v of product.variantes) {
+      const raw = typeof v === 'string' ? v : (v?.imagen_url || v?.url || v?.path || '');
+      const candidate = resolveSupabaseImageUrl(raw);
+      if (candidate) {
+        resolved = candidate;
+        break;
+      }
+    }
+  }
+
+  // Solo si ambos son nulos o inexistentes, recurrir al placeholder por defecto
+  return resolved || fallback;
+}
+
+/**
  * Retorna una URL segura garantizando que nunca sea un enlace 'blob:' expirado
  */
 export function getSafeProductImageUrl(url, fallback = DEFAULT_PRODUCT_IMAGE) {
-  if (!url || typeof url !== 'string' || isBlobUrl(url)) {
-    return fallback;
-  }
-  return url;
+  const resolved = resolveSupabaseImageUrl(url);
+  return resolved || fallback;
 }
 
 // Normalizador y extractor de variantes para garantizar compatibilidad retroactiva total
@@ -58,19 +145,34 @@ export function normalizeProductVariants(product) {
     ? product.tallas 
     : ['S', 'M', 'L'];
 
-  const safeMainImg = getSafeProductImageUrl(product.imagen_url, '');
+  const mainThumb = getProductThumbnailUrl(product, '');
 
   // 1. Si ya tiene variantes estructuradas válidas
   if (Array.isArray(product.variantes) && product.variantes.length > 0) {
     return product.variantes.map((v, idx) => {
-      const rawImg = typeof v === 'string' ? '' : (v.imagen_url || '');
-      const safeImg = getSafeProductImageUrl(rawImg, safeMainImg || DEFAULT_PRODUCT_IMAGE);
+      const rawImg = typeof v === 'string' ? '' : (v.imagen_url || v.url || v.path || '');
+      const safeImg = resolveSupabaseImageUrl(rawImg) || mainThumb || DEFAULT_PRODUCT_IMAGE;
       return {
         id: v.id || `var-${idx}-${Date.now()}`,
         color: typeof v === 'string' ? v : (v.color || 'Color'),
         imagen_url: safeImg,
         stock: v.stock !== undefined ? v.stock : product.cantidad_disponible,
         tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? v.tallas : [...defaultSizes]
+      };
+    });
+  }
+
+  // 1.1 Si tiene imagenes_colores
+  if (Array.isArray(product.imagenes_colores) && product.imagenes_colores.length > 0) {
+    return product.imagenes_colores.map((ic, idx) => {
+      const rawImg = typeof ic === 'string' ? ic : (ic.url || ic.path || ic.imagen_url || '');
+      const safeImg = resolveSupabaseImageUrl(rawImg) || mainThumb || DEFAULT_PRODUCT_IMAGE;
+      return {
+        id: `var-ic-${idx}`,
+        color: ic.color || `Color ${idx + 1}`,
+        imagen_url: safeImg,
+        stock: product.cantidad_disponible,
+        tallas: [...defaultSizes]
       };
     });
   }
@@ -326,22 +428,25 @@ export async function getProducts() {
       throw error;
     }
     return (data || []).map((p) => {
-      const safeImg = getSafeProductImageUrl(p.imagen_url, DEFAULT_PRODUCT_IMAGE);
+      const authenticThumb = getProductThumbnailUrl(p);
       return {
         ...p,
-        imagen_url: safeImg,
+        imagen_url: authenticThumb,
         descripcion: cleanProductDescription(p.descripcion),
-        variantes: normalizeProductVariants({ ...p, imagen_url: safeImg })
+        variantes: normalizeProductVariants({ ...p, imagen_url: authenticThumb })
       };
     });
   } else {
     // Modo demostración local
-    return getLocalProducts().map((p) => ({
-      ...p,
-      imagen_url: getSafeProductImageUrl(p.imagen_url, DEFAULT_PRODUCT_IMAGE),
-      descripcion: cleanProductDescription(p.descripcion),
-      variantes: normalizeProductVariants(p)
-    }));
+    return getLocalProducts().map((p) => {
+      const authenticThumb = getProductThumbnailUrl(p);
+      return {
+        ...p,
+        imagen_url: authenticThumb,
+        descripcion: cleanProductDescription(p.descripcion),
+        variantes: normalizeProductVariants({ ...p, imagen_url: authenticThumb })
+      };
+    });
   }
 }
 
