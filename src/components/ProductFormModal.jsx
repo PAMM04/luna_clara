@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { createProduct, updateProduct, normalizeProductVariants } from '../lib/supabase';
 import { 
   X, Upload, Plus, Trash2, Check, AlertCircle, 
-  Camera, Image as ImageIcon, Star 
+  Camera, Image as ImageIcon, Star, Loader2, Zap 
 } from 'lucide-react';
+import { compressAndConvertToWebP, formatFileSize } from '../lib/imageOptimizer';
 
 
 const COMMON_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Única'];
@@ -25,7 +26,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
   const [customSizeInput, setCustomSizeInput] = useState('');
 
   // Estados de variantes por color
-  // Cada variante: { id: string, color: string, imagen_url: string, file: File|null, previewUrl: string, isCover: boolean, isUrlMode?: boolean }
+  // Cada variante: { id: string, color: string, imagen_url: string, file: File|null, previewUrl: string, isCover: boolean, isUrlMode?: boolean, isOptimizing?: boolean, compressionStats?: object }
   const [variantes, setVariantes] = useState([]);
   const [customColorInput, setCustomColorInput] = useState('');
 
@@ -34,6 +35,8 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
   const [coverPreview, setCoverPreview] = useState('');
   const [coverUrlInput, setCoverUrlInput] = useState('');
   const [showCoverSection, setShowCoverSection] = useState(false);
+  const [isOptimizingCover, setIsOptimizingCover] = useState(false);
+  const [coverCompressionStats, setCoverCompressionStats] = useState(null);
 
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
@@ -60,7 +63,9 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
           file: null,
           previewUrl: v.imagen_url || '',
           isCover: idx === 0,
-          isUrlMode: false
+          isUrlMode: false,
+          isOptimizing: false,
+          compressionStats: null
         })));
       } else {
         setVariantes([{
@@ -71,12 +76,16 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
           file: null,
           previewUrl: product.imagen_url || '',
           isCover: true,
-          isUrlMode: false
+          isUrlMode: false,
+          isOptimizing: false,
+          compressionStats: null
         }]);
       }
 
       setCoverPreview(product.imagen_url || '');
       setCoverUrlInput(product.imagen_url || '');
+      setIsOptimizingCover(false);
+      setCoverCompressionStats(null);
     } else {
       // Valores iniciales para creación de nueva prenda
       setNombre('');
@@ -96,13 +105,17 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
           file: null,
           previewUrl: '',
           isCover: true,
-          isUrlMode: false
+          isUrlMode: false,
+          isOptimizing: false,
+          compressionStats: null
         }
       ]);
       setCoverFile(null);
       setCoverPreview('');
       setCoverUrlInput('');
       setShowCoverSection(false);
+      setIsOptimizingCover(false);
+      setCoverCompressionStats(null);
     }
   }, [product]);
 
@@ -205,7 +218,9 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
       file: null,
       previewUrl: '',
       isCover: variantes.length === 0,
-      isUrlMode: false
+      isUrlMode: false,
+      isOptimizing: false,
+      compressionStats: null
     };
 
     setVariantes((prev) => [...prev, newVar]);
@@ -248,39 +263,104 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
     );
   };
 
-  // Asignar archivo desde cámara o galería a una variante específica
-  const handleVariantFileChange = (variantId, e) => {
+  // Asignar archivo desde cámara o galería a una variante específica con compresión automática WebP
+  const handleVariantFileChange = async (variantId, e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
+    if (!file.type.startsWith('image/') && !file.name.match(/\.(jpe?g|png|webp|heic|avif)$/i)) {
       addToast({
         type: 'error',
         title: 'Formato no soportado',
-        message: 'Por favor selecciona una imagen válida (JPG, PNG, WebP).'
+        message: 'Por favor selecciona una imagen válida (JPG, PNG o WebP).'
       });
       return;
     }
 
-    const previewUrl = URL.createObjectURL(file);
+    // 1. Mostrar preview temporal y activar indicador visual de procesamiento
+    const tempPreviewUrl = URL.createObjectURL(file);
     setVariantes((prev) =>
       prev.map((v) => {
         if (v.id === variantId) {
           return {
             ...v,
-            file,
-            previewUrl,
-            imagen_url: previewUrl
+            previewUrl: tempPreviewUrl,
+            imagen_url: tempPreviewUrl,
+            isOptimizing: true,
+            compressionStats: null
           };
         }
         return v;
       })
     );
 
-    // Si es la portada o la primera, actualizar preview de portada
-    const target = variantes.find((v) => v.id === variantId);
-    if (target?.isCover || variantes[0]?.id === variantId) {
-      setCoverPreview(previewUrl);
+    // Si es portada preliminarmente, actualizar vista previa
+    const targetVar = variantes.find((v) => v.id === variantId);
+    if (targetVar?.isCover || variantes[0]?.id === variantId) {
+      setCoverPreview(tempPreviewUrl);
+    }
+
+    // 2. Ejecutar conversión y compresión automática a WebP (máx 1200px, 82% calidad)
+    try {
+      const optimized = await compressAndConvertToWebP(file, {
+        maxWidth: 1200,
+        maxHeight: 1600,
+        quality: 0.82
+      });
+
+      setVariantes((prev) =>
+        prev.map((v) => {
+          if (v.id === variantId) {
+            return {
+              ...v,
+              file: optimized.file,
+              previewUrl: optimized.previewUrl,
+              imagen_url: optimized.previewUrl,
+              isOptimizing: false,
+              compressionStats: {
+                originalSize: optimized.originalSize,
+                compressedSize: optimized.compressedSize,
+                savedPercent: optimized.savedPercent,
+                width: optimized.width,
+                height: optimized.height
+              }
+            };
+          }
+          return v;
+        })
+      );
+
+      // Si es la portada designada, actualizar la vista previa con el WebP definitivo
+      if (targetVar?.isCover || variantes[0]?.id === variantId) {
+        setCoverPreview(optimized.previewUrl);
+      }
+
+      addToast({
+        type: 'success',
+        title: 'Imagen optimizada a WebP',
+        message: `Foto para "${targetVar?.color || 'Variante'}" reducida de ${formatFileSize(optimized.originalSize)} a ${formatFileSize(optimized.compressedSize)} (-${optimized.savedPercent}%)`
+      });
+    } catch (err) {
+      console.error('Error optimizando imagen a WebP:', err);
+      // Fallback transparente: mantener archivo original para no bloquear al usuario
+      setVariantes((prev) =>
+        prev.map((v) => {
+          if (v.id === variantId) {
+            return {
+              ...v,
+              file,
+              isOptimizing: false,
+              compressionStats: null
+            };
+          }
+          return v;
+        })
+      );
+      addToast({
+        type: 'warning',
+        title: 'Aviso de imagen',
+        message: 'No se pudo aplicar compresión WebP; se usará la imagen original.'
+      });
     }
   };
 
@@ -293,7 +373,9 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
             ...v,
             file: null,
             previewUrl: '',
-            imagen_url: ''
+            imagen_url: '',
+            isOptimizing: false,
+            compressionStats: null
           };
         }
         return v;
@@ -310,7 +392,9 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
             ...v,
             file: null,
             previewUrl: url,
-            imagen_url: url
+            imagen_url: url,
+            isOptimizing: false,
+            compressionStats: null
           };
         }
         return v;
@@ -318,18 +402,73 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
     );
   };
 
-  // Portada general opcional
-  const handleCoverFileChange = (e) => {
+  // Portada general opcional con compresión automática WebP
+  const handleCoverFileChange = async (e) => {
     const file = e.target.files?.[0];
-    if (file && file.type.startsWith('image/')) {
+    if (!file) return;
+
+    if (!file.type.startsWith('image/') && !file.name.match(/\.(jpe?g|png|webp|heic|avif)$/i)) {
+      addToast({
+        type: 'error',
+        title: 'Formato no soportado',
+        message: 'Por favor selecciona una imagen válida (JPG, PNG o WebP).'
+      });
+      return;
+    }
+
+    const tempPreview = URL.createObjectURL(file);
+    setCoverPreview(tempPreview);
+    setIsOptimizingCover(true);
+    setCoverCompressionStats(null);
+
+    try {
+      const optimized = await compressAndConvertToWebP(file, {
+        maxWidth: 1200,
+        maxHeight: 1600,
+        quality: 0.82
+      });
+
+      setCoverFile(optimized.file);
+      setCoverPreview(optimized.previewUrl);
+      setCoverCompressionStats({
+        originalSize: optimized.originalSize,
+        compressedSize: optimized.compressedSize,
+        savedPercent: optimized.savedPercent,
+        width: optimized.width,
+        height: optimized.height
+      });
+
+      addToast({
+        type: 'success',
+        title: 'Portada optimizada a WebP',
+        message: `Foto reducida de ${formatFileSize(optimized.originalSize)} a ${formatFileSize(optimized.compressedSize)} (-${optimized.savedPercent}%)`
+      });
+    } catch (err) {
+      console.error('Error optimizando foto de portada:', err);
       setCoverFile(file);
-      setCoverPreview(URL.createObjectURL(file));
+    } finally {
+      setIsOptimizingCover(false);
     }
   };
+
+  // Indicador de si alguna foto está procesándose actualmente
+  const isAnyOptimizing = Boolean(
+    isOptimizingCover || variantes.some((v) => v.isOptimizing)
+  );
 
   // Validación y guardado
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (isAnyOptimizing) {
+      addToast({
+        type: 'info',
+        title: 'Optimizando imágenes',
+        message: 'Por favor espera unos segundos mientras termina la compresión WebP.'
+      });
+      return;
+    }
+
     const newErrors = {};
 
     if (!nombre.trim()) newErrors.nombre = 'El nombre de la prenda es obligatorio.';
@@ -612,9 +751,28 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
               </span>
             </div>
             
-            <p style={{ fontSize: '0.78rem', color: 'var(--color-muted)', marginBottom: '0.9rem', lineHeight: 1.4 }}>
+            <p style={{ fontSize: '0.78rem', color: 'var(--color-muted)', marginBottom: '0.6rem', lineHeight: 1.4 }}>
               Asocia una foto a cada color disponible. En la tienda, la imagen cambiará automáticamente cuando el cliente elija el color.
             </p>
+
+            {/* Aviso visual de optimización automática WebP */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: 'rgba(197, 160, 89, 0.1)',
+              border: '1px solid rgba(197, 160, 89, 0.25)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '0.5rem 0.75rem',
+              marginBottom: '0.9rem',
+              fontSize: '0.75rem',
+              color: 'var(--color-charcoal)'
+            }}>
+              <Zap size={15} color="var(--gold-primary)" style={{ flexShrink: 0 }} />
+              <div>
+                <strong style={{ color: 'var(--gold-dark)' }}>Compresión inteligente WebP activa:</strong> Cada foto se redimensiona a máx. 1200px y se comprime automáticamente en formato WebP (~82% calidad, peso &lt;150 KB) para cuidar la cuota de Supabase Storage y cargar ultra-rápido en móviles.
+              </div>
+            </div>
 
             {/* Chips de adición rápida de colores sugeridos */}
             <div style={{ marginBottom: '1rem' }}>
@@ -819,7 +977,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                     <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'center', flexWrap: 'wrap' }}>
                       {hasPhoto ? (
                         <>
-                          {/* Miniatura de la foto asignada */}
+                          {/* Miniatura de la foto asignada con overlay de procesamiento */}
                           <div style={{
                             width: '75px',
                             height: '90px',
@@ -835,15 +993,63 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                               alt={`Variante ${v.color}`}
                               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                             />
+                            {v.isOptimizing && (
+                              <div style={{
+                                position: 'absolute',
+                                inset: 0,
+                                background: 'rgba(255, 255, 255, 0.88)',
+                                backdropFilter: 'blur(2px)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.2rem'
+                              }}>
+                                <Loader2 size={18} className="spin-animation" color="var(--gold-primary)" />
+                                <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--gold-dark)' }}>WebP</span>
+                              </div>
+                            )}
                           </div>
 
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1 }}>
-                            <div style={{ fontSize: '0.78rem', color: '#065F46', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                              <Check size={14} />
-                              <span>Foto lista para {v.color}</span>
-                            </div>
+                            {v.isOptimizing ? (
+                              <div style={{ fontSize: '0.78rem', color: 'var(--gold-dark)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <Loader2 size={13} className="spin-animation" color="var(--gold-primary)" />
+                                <span>Optimizando imagen a WebP (máx. 1200px)...</span>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '0.78rem', color: '#065F46', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <Check size={14} />
+                                <span>Foto lista para {v.color}</span>
+                              </div>
+                            )}
 
-                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            {/* Indicador de compresión WebP y ahorro de peso */}
+                            {v.compressionStats && !v.isOptimizing && (
+                              <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                border: '1px solid rgba(16, 185, 129, 0.28)',
+                                color: '#065F46',
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: 'var(--radius-full)',
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                width: 'fit-content'
+                              }}>
+                                <Zap size={11} color="#10B981" />
+                                <span>WebP: {formatFileSize(v.compressionStats.compressedSize)}</span>
+                                {v.compressionStats.savedPercent > 0 && (
+                                  <span style={{ color: '#047857', opacity: 0.9 }}>
+                                    (-{v.compressionStats.savedPercent}%)
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
                               {/* Botón táctil para cambiar foto */}
                               <label style={{
                                 background: 'var(--color-cream)',
@@ -853,16 +1059,18 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                                 borderRadius: 'var(--radius-sm)',
                                 fontSize: '0.78rem',
                                 fontWeight: 600,
-                                cursor: 'pointer',
+                                cursor: v.isOptimizing ? 'not-allowed' : 'pointer',
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '0.35rem'
+                                gap: '0.35rem',
+                                opacity: v.isOptimizing ? 0.6 : 1
                               }}>
                                 <Camera size={14} color="var(--gold-primary)" />
-                                <span>Cambiar foto</span>
+                                <span>{v.isOptimizing ? 'Procesando...' : 'Cambiar foto'}</span>
                                 <input
                                   type="file"
                                   accept="image/*"
+                                  disabled={v.isOptimizing}
                                   style={{ display: 'none' }}
                                   onChange={(e) => handleVariantFileChange(v.id, e)}
                                 />
@@ -872,13 +1080,15 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                               <button
                                 type="button"
                                 onClick={() => clearVariantPhoto(v.id)}
+                                disabled={v.isOptimizing}
                                 style={{
                                   background: 'transparent',
                                   border: 'none',
                                   color: 'var(--color-muted)',
                                   fontSize: '0.75rem',
-                                  cursor: 'pointer',
-                                  textDecoration: 'underline'
+                                  cursor: v.isOptimizing ? 'not-allowed' : 'pointer',
+                                  textDecoration: 'underline',
+                                  opacity: v.isOptimizing ? 0.6 : 1
                                 }}
                               >
                                 Quitar foto
@@ -889,34 +1099,57 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                       ) : (
                         /* Botón táctil grande para tomar foto con celular o elegir de galería */
                         <div style={{ width: '100%' }}>
-                          <label style={{
-                            border: '2px dashed var(--color-sand)',
-                            borderRadius: 'var(--radius-sm)',
-                            padding: '0.85rem 1rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.6rem',
-                            cursor: 'pointer',
-                            background: 'rgba(247, 245, 240, 0.6)',
-                            transition: 'all 0.15s ease'
-                          }}>
-                            <Camera size={20} color="var(--gold-primary)" />
-                            <div style={{ textAlign: 'left' }}>
-                              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-noir)' }}>
-                                Tomar foto o elegir de galería para "{v.color}"
-                              </div>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--color-muted)' }}>
-                                Toca aquí con tu celular para abrir cámara o fotos
+                          {v.isOptimizing ? (
+                            <div style={{
+                              border: '2px solid var(--gold-primary)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '0.85rem 1rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.65rem',
+                              background: 'var(--gold-subtle)'
+                            }}>
+                              <Loader2 size={20} className="spin-animation" color="var(--gold-primary)" />
+                              <div style={{ textAlign: 'left' }}>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-noir)' }}>
+                                  Optimizando foto para "{v.color}"...
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--gold-dark)' }}>
+                                  Redimensionando a máx. 1200px y convirtiendo a formato WebP ligero
+                                </div>
                               </div>
                             </div>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              style={{ display: 'none' }}
-                              onChange={(e) => handleVariantFileChange(v.id, e)}
-                            />
-                          </label>
+                          ) : (
+                            <label style={{
+                              border: '2px dashed var(--color-sand)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '0.85rem 1rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.6rem',
+                              cursor: 'pointer',
+                              background: 'rgba(247, 245, 240, 0.6)',
+                              transition: 'all 0.15s ease'
+                            }}>
+                              <Camera size={20} color="var(--gold-primary)" />
+                              <div style={{ textAlign: 'left' }}>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-noir)' }}>
+                                  Tomar foto o elegir de galería para "{v.color}"
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--color-muted)' }}>
+                                  Toca aquí con tu celular para abrir cámara o fotos
+                                </div>
+                              </div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                style={{ display: 'none' }}
+                                onChange={(e) => handleVariantFileChange(v.id, e)}
+                              />
+                            </label>
+                          )}
 
                           {/* Alternativa: Enlace directo URL */}
                           <div style={{ marginTop: '0.35rem', textAlign: 'right' }}>
@@ -1155,15 +1388,62 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
                 <p style={{ fontSize: '0.76rem', color: 'var(--color-muted)', marginBottom: '0.5rem' }}>
                   Por defecto se usará la foto de la variante marcada como Portada. Si deseas una foto de grupo o modelo diferente:
                 </p>
-                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                  <label className="btn btn-outline" style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem', cursor: 'pointer' }}>
-                    <Upload size={14} />
-                    <span>Seleccionar foto de portada</span>
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleCoverFileChange} />
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label 
+                    className="btn btn-outline" 
+                    style={{ 
+                      fontSize: '0.8rem', 
+                      padding: '0.45rem 0.85rem', 
+                      cursor: isOptimizingCover ? 'not-allowed' : 'pointer',
+                      opacity: isOptimizingCover ? 0.6 : 1 
+                    }}
+                  >
+                    {isOptimizingCover ? (
+                      <>
+                        <Loader2 size={14} className="spin-animation" color="var(--gold-primary)" />
+                        <span>Optimizando portada...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={14} />
+                        <span>Seleccionar foto de portada</span>
+                      </>
+                    )}
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      disabled={isOptimizingCover}
+                      style={{ display: 'none' }} 
+                      onChange={handleCoverFileChange} 
+                    />
                   </label>
+
                   {coverPreview && (
-                    <div style={{ width: '40px', height: '50px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--color-sand)' }}>
+                    <div style={{ position: 'relative', width: '40px', height: '50px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--color-sand)' }}>
                       <img src={coverPreview} alt="Portada" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      {isOptimizingCover && (
+                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Loader2 size={14} className="spin-animation" color="var(--gold-primary)" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {coverCompressionStats && !isOptimizingCover && (
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      background: 'rgba(16, 185, 129, 0.1)',
+                      border: '1px solid rgba(16, 185, 129, 0.28)',
+                      color: '#065F46',
+                      padding: '0.2rem 0.55rem',
+                      borderRadius: 'var(--radius-full)',
+                      fontSize: '0.72rem',
+                      fontWeight: 600
+                    }}>
+                      <Zap size={11} color="#10B981" />
+                      <span>WebP: {formatFileSize(coverCompressionStats.compressedSize)} (-{coverCompressionStats.savedPercent}%)</span>
                     </div>
                   )}
                 </div>
@@ -1236,12 +1516,20 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || isAnyOptimizing}
               className="btn btn-gold"
-              style={{ minWidth: '170px' }}
+              style={{ minWidth: '185px' }}
             >
-              {saving ? (
-                <span>Subiendo fotos y guardando...</span>
+              {isAnyOptimizing ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', justifyContent: 'center' }}>
+                  <Loader2 size={16} className="spin-animation" />
+                  <span>Optimizando imágenes...</span>
+                </div>
+              ) : saving ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', justifyContent: 'center' }}>
+                  <Loader2 size={16} className="spin-animation" />
+                  <span>Subiendo fotos y guardando...</span>
+                </div>
               ) : (
                 <>
                   <Check size={18} />

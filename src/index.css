@@ -518,3 +518,30 @@ h1, h2, h3, h4, .font-serif {
 .switch-track.active .switch-thumb {
   transform: translateX(20px);
 }
+
+/* Animations for Image Optimization & Spinners */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-animation {
+  animation: spin 0.85s linear infinite;
+}
+
+@keyframes pulseWebp {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.pulse-webp {
+  animation: pulseWebp 1.5s ease-in-out infinite;
+}

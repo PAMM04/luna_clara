@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { compressAndConvertToWebP } from './imageOptimizer';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
@@ -251,29 +252,46 @@ export async function getProducts() {
 }
 
 /**
- * Subir imagen al Storage de Supabase
+ * Subir imagen al Storage de Supabase garantizando formato WebP optimizado
  */
 export async function uploadProductImage(file) {
   if (!file) throw new Error('No se ha proporcionado ningún archivo');
 
+  // Asegurar que el archivo esté convertido y comprimido a formato WebP
+  let fileToUpload = file;
+  if (file instanceof File || file instanceof Blob) {
+    const isAlreadyWebP = file.type === 'image/webp' || (file.name && file.name.toLowerCase().endsWith('.webp'));
+    // Si no es WebP o si no se ha pre-optimizado, ejecutar optimización nativa
+    if (!isAlreadyWebP) {
+      try {
+        const optimized = await compressAndConvertToWebP(file);
+        fileToUpload = optimized.file;
+      } catch (optErr) {
+        console.warn('Aviso: Falló la pre-conversión automática en uploadProductImage, usando archivo recibido:', optErr);
+      }
+    }
+  }
+
   if (isSupabaseConfigured() && supabase) {
-    // Sanitizar nombre de archivo y generar nombre único
-    const fileExt = file.name ? file.name.split('.').pop() : 'jpg';
-    const rawName = file.name ? file.name.split('.')[0] : 'variante';
-    const cleanFileName = rawName.replace(/[^a-zA-Z0-9]/g, '_');
+    // Sanitizar nombre de archivo y garantizar extensión .webp
+    const rawName = fileToUpload.name ? fileToUpload.name.replace(/\.[^/.]+$/, '') : 'variante';
+    const cleanFileName = rawName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const isWebP = fileToUpload.type === 'image/webp' || (fileToUpload.name && fileToUpload.name.toLowerCase().endsWith('.webp'));
+    const fileExt = isWebP ? 'webp' : (fileToUpload.name ? fileToUpload.name.split('.').pop() : 'webp');
     const fileName = `${Date.now()}_${cleanFileName}.${fileExt}`;
     const filePath = `prendas/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from('imagenes-productos')
-      .upload(filePath, file, {
-        cacheControl: '3600',
+      .upload(filePath, fileToUpload, {
+        contentType: isWebP ? 'image/webp' : fileToUpload.type,
+        cacheControl: '31536000, public', // Caché extendido de 1 año para assets estáticos
         upsert: false
       });
 
     if (uploadError) {
       console.error('Error uploading image to Supabase:', uploadError);
-      throw new Error(`Error al subir la imagen: ${uploadError.message}`);
+      throw new Error(`Error al subir la imagen a Supabase Storage: ${uploadError.message}`);
     }
 
     const { data } = supabase.storage
@@ -282,12 +300,12 @@ export async function uploadProductImage(file) {
 
     return data.publicUrl;
   } else {
-    // Si estamos en demo local, convertimos a DataURL para que se vea inmediatamente
+    // Modo demostración local: DataURL legible inmediatamente en el navegador
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve(e.target.result);
       reader.onerror = () => reject(new Error('Error al procesar la imagen localmente'));
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(fileToUpload);
     });
   }
 }
