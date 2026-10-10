@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { generateWhatsAppOrderUrl, formatPrice, normalizeProductVariants } from '../lib/supabase';
+import { generateWhatsAppOrderUrl, formatPrice, normalizeProductVariants, getSafeProductImageUrl, DEFAULT_PRODUCT_IMAGE } from '../lib/supabase';
 import { X, MessageCircle, AlertCircle, CheckCircle2, ShieldCheck, Sparkles, Check, Eye } from 'lucide-react';
 
 export default function ProductModal({ product, onClose, isPreview = false }) {
@@ -71,7 +71,8 @@ export default function ProductModal({ product, onClose, isPreview = false }) {
   if (!product) return null;
 
   // Imagen activa a mostrar: si la variante tiene foto, se muestra; si no, la imagen principal
-  const currentDisplayImage = activeVariant?.imagen_url || product.imagen_url || 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1000&q=80';
+  const rawModalImage = activeVariant?.imagen_url || product.imagen_url;
+  const currentDisplayImage = getSafeProductImageUrl(rawModalImage, DEFAULT_PRODUCT_IMAGE);
 
   const isOutOfStock = !product.disponible || (product.cantidad_disponible !== undefined && product.cantidad_disponible <= 0);
 
@@ -158,6 +159,10 @@ export default function ProductModal({ product, onClose, isPreview = false }) {
                 key={currentDisplayImage}
                 src={currentDisplayImage}
                 alt={`${product.nombre} - ${selectedColor}`}
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = DEFAULT_PRODUCT_IMAGE;
+                }}
                 style={{ 
                   width: '100%', 
                   height: '100%', 
@@ -247,8 +252,12 @@ export default function ProductModal({ product, onClose, isPreview = false }) {
                       title={`Ver en color ${v.color}`}
                     >
                       <img
-                        src={v.imagen_url || product.imagen_url}
+                        src={getSafeProductImageUrl(v.imagen_url || product.imagen_url, DEFAULT_PRODUCT_IMAGE)}
                         alt={v.color}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = DEFAULT_PRODUCT_IMAGE;
+                        }}
                         style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '2px' }}
                       />
                     </button>

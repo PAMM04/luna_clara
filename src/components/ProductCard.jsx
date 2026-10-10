@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { generateWhatsAppOrderUrl, formatPrice, normalizeProductVariants } from '../lib/supabase';
+import { generateWhatsAppOrderUrl, formatPrice, normalizeProductVariants, getSafeProductImageUrl, DEFAULT_PRODUCT_IMAGE } from '../lib/supabase';
 import { MessageCircle, Eye, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function ProductCard({ product, onSelectProduct }) {
@@ -19,7 +19,8 @@ export default function ProductCard({ product, onSelectProduct }) {
     ? activeVariant.tallas
     : (product.tallas || []);
 
-  const displayImage = activeVariant?.imagen_url || product.imagen_url || 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=800&q=80';
+  const rawImage = activeVariant?.imagen_url || product.imagen_url;
+  const displayImage = getSafeProductImageUrl(rawImage, DEFAULT_PRODUCT_IMAGE);
 
   const isOutOfStock = !product.disponible || (product.cantidad_disponible !== undefined && product.cantidad_disponible <= 0);
 
@@ -49,6 +50,10 @@ export default function ProductCard({ product, onSelectProduct }) {
           alt={`${product.nombre} - ${activeColor}`}
           className="product-image"
           loading="lazy"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = DEFAULT_PRODUCT_IMAGE;
+          }}
         />
 
         {/* Badge de Disponibilidad */}

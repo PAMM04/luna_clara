@@ -25,6 +25,26 @@ export const supabase = isSupabaseConfigured()
 const LOCAL_STORAGE_KEY = 'luna_clara_demo_products_v1';
 const LOCAL_AUTH_KEY = 'luna_clara_demo_auth_session';
 
+// Imagen por defecto elegante para prendas sin imagen o con URL rota
+export const DEFAULT_PRODUCT_IMAGE = 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=800&q=80';
+
+/**
+ * Determina si una URL es un enlace 'blob:' temporal de memoria del navegador
+ */
+export function isBlobUrl(url) {
+  return typeof url === 'string' && url.trim().startsWith('blob:');
+}
+
+/**
+ * Retorna una URL segura garantizando que nunca sea un enlace 'blob:' expirado
+ */
+export function getSafeProductImageUrl(url, fallback = DEFAULT_PRODUCT_IMAGE) {
+  if (!url || typeof url !== 'string' || isBlobUrl(url)) {
+    return fallback;
+  }
+  return url;
+}
+
 // Normalizador y extractor de variantes para garantizar compatibilidad retroactiva total
 export function cleanProductDescription(description) {
   if (!description) return '';
@@ -38,15 +58,21 @@ export function normalizeProductVariants(product) {
     ? product.tallas 
     : ['S', 'M', 'L'];
 
+  const safeMainImg = getSafeProductImageUrl(product.imagen_url, '');
+
   // 1. Si ya tiene variantes estructuradas válidas
   if (Array.isArray(product.variantes) && product.variantes.length > 0) {
-    return product.variantes.map((v, idx) => ({
-      id: v.id || `var-${idx}-${Date.now()}`,
-      color: typeof v === 'string' ? v : (v.color || 'Color'),
-      imagen_url: typeof v === 'string' ? (product.imagen_url || '') : (v.imagen_url || product.imagen_url || ''),
-      stock: v.stock !== undefined ? v.stock : product.cantidad_disponible,
-      tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? v.tallas : [...defaultSizes]
-    }));
+    return product.variantes.map((v, idx) => {
+      const rawImg = typeof v === 'string' ? '' : (v.imagen_url || '');
+      const safeImg = getSafeProductImageUrl(rawImg, safeMainImg || DEFAULT_PRODUCT_IMAGE);
+      return {
+        id: v.id || `var-${idx}-${Date.now()}`,
+        color: typeof v === 'string' ? v : (v.color || 'Color'),
+        imagen_url: safeImg,
+        stock: v.stock !== undefined ? v.stock : product.cantidad_disponible,
+        tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? v.tallas : [...defaultSizes]
+      };
+    });
   }
 
   // 2. Si tiene metadatos incrustados en descripcion (estrategia de persistencia de respaldo)
@@ -59,7 +85,7 @@ export function normalizeProductVariants(product) {
           return parsed.map((v, idx) => ({
             id: v.id || `var-${idx}-${Date.now()}`,
             color: v.color || 'Color',
-            imagen_url: v.imagen_url || product.imagen_url || '',
+            imagen_url: getSafeProductImageUrl(v.imagen_url, safeMainImg || DEFAULT_PRODUCT_IMAGE),
             stock: v.stock !== undefined ? v.stock : product.cantidad_disponible,
             tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? v.tallas : [...defaultSizes]
           }));
@@ -75,7 +101,7 @@ export function normalizeProductVariants(product) {
     return product.colores.map((color, idx) => ({
       id: `var-synthesized-${idx}`,
       color: color,
-      imagen_url: product.imagen_url || '',
+      imagen_url: safeMainImg || DEFAULT_PRODUCT_IMAGE,
       stock: product.cantidad_disponible,
       tallas: [...defaultSizes]
     }));
@@ -85,7 +111,7 @@ export function normalizeProductVariants(product) {
   return [{
     id: 'var-default',
     color: 'Único',
-    imagen_url: product.imagen_url || '',
+    imagen_url: safeMainImg || DEFAULT_PRODUCT_IMAGE,
     stock: product.cantidad_disponible,
     tallas: [...defaultSizes]
   }];
@@ -195,26 +221,89 @@ export const INITIAL_DEMO_PRODUCTS = [
   }
 ];
 
-// Helper para obtener productos locales
-const getLocalProducts = () => {
+// Helper para obtener productos locales con auto-reparación transparente de URLs
+export const getLocalProducts = () => {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_DEMO_PRODUCTS));
       return INITIAL_DEMO_PRODUCTS;
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return INITIAL_DEMO_PRODUCTS;
+
+    // AUTO-REPARACIÓN AUTOMÁTICA:
+    // Las URLs 'blob:' son referencias volátiles en memoria que expiran al recargar la página.
+    // Si algún producto o variante en localStorage guardó una URL 'blob:' expirada,
+    // la reparamos automáticamente para que nunca se muestre la imagen rota.
+    let needsSave = false;
+    const sanitized = parsed.map((p, idx) => {
+      let changed = false;
+      let pImg = p.imagen_url;
+
+      // Si la imagen principal es un blob expirado o vacía
+      if (isBlobUrl(pImg) || !pImg) {
+        // 1. Intentar rescatar la imagen de alguna de sus variantes que no sea blob
+        const validVariant = Array.isArray(p.variantes) && p.variantes.find((v) => v.imagen_url && !isBlobUrl(v.imagen_url));
+        if (validVariant) {
+          pImg = validVariant.imagen_url;
+        } else {
+          // 2. Asignar foto de catálogo elegante de demostración
+          pImg = INITIAL_DEMO_PRODUCTS[idx % INITIAL_DEMO_PRODUCTS.length]?.imagen_url || DEFAULT_PRODUCT_IMAGE;
+        }
+        changed = true;
+      }
+
+      // Limpiar variantes que tengan blob: expirados
+      const cleanVariants = Array.isArray(p.variantes) ? p.variantes.map((v) => {
+        if (isBlobUrl(v.imagen_url)) {
+          changed = true;
+          return { ...v, imagen_url: pImg };
+        }
+        return v;
+      }) : [];
+
+      if (changed) {
+        needsSave = true;
+        return {
+          ...p,
+          imagen_url: pImg,
+          variantes: cleanVariants
+        };
+      }
+      return p;
+    });
+
+    if (needsSave) {
+      console.info('Auto-reparación: Se sanearon URLs temporales blob expiradas en localStorage.');
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+    }
+
+    return sanitized;
   } catch (err) {
     console.error('Error reading local demo products:', err);
     return INITIAL_DEMO_PRODUCTS;
   }
 };
 
-const setLocalProducts = (products) => {
+export const setLocalProducts = (products) => {
   try {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(products));
   } catch (err) {
     console.error('Error saving local demo products:', err);
+  }
+};
+
+/**
+ * Restablecer las prendas de demostración originales con sus imágenes
+ */
+export const resetLocalProducts = () => {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_DEMO_PRODUCTS));
+    return INITIAL_DEMO_PRODUCTS;
+  } catch (err) {
+    console.error('Error resetting demo products:', err);
+    return INITIAL_DEMO_PRODUCTS;
   }
 };
 
@@ -236,15 +325,20 @@ export async function getProducts() {
       console.error('Error fetching products from Supabase:', error);
       throw error;
     }
-    return (data || []).map((p) => ({
-      ...p,
-      descripcion: cleanProductDescription(p.descripcion),
-      variantes: normalizeProductVariants(p)
-    }));
+    return (data || []).map((p) => {
+      const safeImg = getSafeProductImageUrl(p.imagen_url, DEFAULT_PRODUCT_IMAGE);
+      return {
+        ...p,
+        imagen_url: safeImg,
+        descripcion: cleanProductDescription(p.descripcion),
+        variantes: normalizeProductVariants({ ...p, imagen_url: safeImg })
+      };
+    });
   } else {
     // Modo demostración local
     return getLocalProducts().map((p) => ({
       ...p,
+      imagen_url: getSafeProductImageUrl(p.imagen_url, DEFAULT_PRODUCT_IMAGE),
       descripcion: cleanProductDescription(p.descripcion),
       variantes: normalizeProductVariants(p)
     }));
@@ -344,7 +438,7 @@ export async function createProduct(productData, coverImageFile = null) {
 
   for (let i = 0; i < incomingVariants.length; i++) {
     const v = incomingVariants[i];
-    let variantImageUrl = v.imagen_url || '';
+    let variantImageUrl = getSafeProductImageUrl(v.imagen_url, '');
 
     // Si la variante tiene un archivo local nuevo para subir
     if (v.file) {
@@ -364,13 +458,13 @@ export async function createProduct(productData, coverImageFile = null) {
     });
   }
 
-  // 2. Determinar la fotografía principal / portada
-  let finalCoverUrl = productData.imagen_url || '';
+  // 2. Determinar la fotografía principal / portada (descartar enlaces 'blob:' efímeros)
+  let finalCoverUrl = getSafeProductImageUrl(productData.imagen_url, '');
   if (coverImageFile) {
     finalCoverUrl = await uploadProductImage(coverImageFile);
   } else if (!finalCoverUrl && processedVariants.length > 0) {
-    // Si no se asignó portada separada, usar la primera variante con foto
-    const firstWithPic = processedVariants.find((v) => v.imagen_url);
+    // Si no se asignó portada separada, usar la primera variante con foto válida
+    const firstWithPic = processedVariants.find((v) => v.imagen_url && !isBlobUrl(v.imagen_url));
     if (firstWithPic) {
       finalCoverUrl = firstWithPic.imagen_url;
     }
@@ -378,10 +472,14 @@ export async function createProduct(productData, coverImageFile = null) {
 
   // Si alguna variante no tiene foto propia, asignarle la portada para que no quede vacía
   processedVariants.forEach((v) => {
-    if (!v.imagen_url && finalCoverUrl) {
+    if ((!v.imagen_url || isBlobUrl(v.imagen_url)) && finalCoverUrl) {
       v.imagen_url = finalCoverUrl;
     }
   });
+
+  if (!finalCoverUrl && processedVariants.length > 0) {
+    finalCoverUrl = processedVariants[0]?.imagen_url || DEFAULT_PRODUCT_IMAGE;
+  }
 
   if (!finalCoverUrl && processedVariants.length === 0) {
     throw new Error('Debes proporcionar al menos una fotografía para la prenda o para una de sus variantes.');
@@ -483,7 +581,7 @@ export async function updateProduct(id, productData, newCoverImageFile = null) {
 
   for (let i = 0; i < incomingVariants.length; i++) {
     const v = incomingVariants[i];
-    let variantImageUrl = v.imagen_url || '';
+    let variantImageUrl = getSafeProductImageUrl(v.imagen_url, '');
 
     // Si tiene un archivo nuevo adjunto
     if (v.file) {
@@ -503,21 +601,25 @@ export async function updateProduct(id, productData, newCoverImageFile = null) {
     });
   }
 
-  // 2. Determinar la fotografía principal / portada
-  let finalCoverUrl = productData.imagen_url || '';
+  // 2. Determinar la fotografía principal / portada (descartar enlaces 'blob:' efímeros)
+  let finalCoverUrl = getSafeProductImageUrl(productData.imagen_url, '');
   if (newCoverImageFile) {
     finalCoverUrl = await uploadProductImage(newCoverImageFile);
   } else if (!finalCoverUrl && processedVariants.length > 0) {
-    const firstWithPic = processedVariants.find((v) => v.imagen_url);
+    const firstWithPic = processedVariants.find((v) => v.imagen_url && !isBlobUrl(v.imagen_url));
     if (firstWithPic) finalCoverUrl = firstWithPic.imagen_url;
   }
 
   // Asegurar que ninguna variante quede sin imagen si hay una portada
   processedVariants.forEach((v) => {
-    if (!v.imagen_url && finalCoverUrl) {
+    if ((!v.imagen_url || isBlobUrl(v.imagen_url)) && finalCoverUrl) {
       v.imagen_url = finalCoverUrl;
     }
   });
+
+  if (!finalCoverUrl && processedVariants.length > 0) {
+    finalCoverUrl = processedVariants[0]?.imagen_url || DEFAULT_PRODUCT_IMAGE;
+  }
 
   const derivedColors = processedVariants.map((v) => v.color).filter(Boolean);
   const finalColores = derivedColors.length > 0 

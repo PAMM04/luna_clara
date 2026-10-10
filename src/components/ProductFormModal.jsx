@@ -50,31 +50,35 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
       setDisponible(product.disponible !== undefined ? product.disponible : true);
       setTallas(Array.isArray(product.tallas) ? [...product.tallas] : []);
 
-      // Cargar variantes normalizadas
+      // Cargar variantes normalizadas y descartar URLs blob expiradas
+      const safeProductImg = (product.imagen_url && !product.imagen_url.startsWith('blob:')) ? product.imagen_url : '';
       const normVariants = normalizeProductVariants(product);
       const productSizes = Array.isArray(product.tallas) && product.tallas.length > 0 ? [...product.tallas] : ['S', 'M', 'L'];
 
       if (normVariants && normVariants.length > 0) {
-        setVariantes(normVariants.map((v, idx) => ({
-          id: v.id || `var-${idx}-${Date.now()}`,
-          color: v.color || 'Color',
-          tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? [...v.tallas] : [...productSizes],
-          imagen_url: v.imagen_url || '',
-          file: null,
-          previewUrl: v.imagen_url || '',
-          isCover: idx === 0,
-          isUrlMode: false,
-          isOptimizing: false,
-          compressionStats: null
-        })));
+        setVariantes(normVariants.map((v, idx) => {
+          const safeVarImg = (v.imagen_url && !v.imagen_url.startsWith('blob:')) ? v.imagen_url : safeProductImg;
+          return {
+            id: v.id || `var-${idx}-${Date.now()}`,
+            color: v.color || 'Color',
+            tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? [...v.tallas] : [...productSizes],
+            imagen_url: safeVarImg,
+            file: null,
+            previewUrl: safeVarImg,
+            isCover: idx === 0,
+            isUrlMode: false,
+            isOptimizing: false,
+            compressionStats: null
+          };
+        }));
       } else {
         setVariantes([{
           id: `var-0-${Date.now()}`,
           color: 'Único',
           tallas: [...productSizes],
-          imagen_url: product.imagen_url || '',
+          imagen_url: safeProductImg,
           file: null,
-          previewUrl: product.imagen_url || '',
+          previewUrl: safeProductImg,
           isCover: true,
           isUrlMode: false,
           isOptimizing: false,
@@ -82,8 +86,8 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
         }]);
       }
 
-      setCoverPreview(product.imagen_url || '');
-      setCoverUrlInput(product.imagen_url || '');
+      setCoverPreview(safeProductImg);
+      setCoverUrlInput(safeProductImg);
       setIsOptimizingCover(false);
       setCoverCompressionStats(null);
     } else {
@@ -285,7 +289,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
           return {
             ...v,
             previewUrl: tempPreviewUrl,
-            imagen_url: tempPreviewUrl,
+            imagen_url: (v.imagen_url && !v.imagen_url.startsWith('blob:')) ? v.imagen_url : '',
             isOptimizing: true,
             compressionStats: null
           };
@@ -315,7 +319,7 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
               ...v,
               file: optimized.file,
               previewUrl: optimized.previewUrl,
-              imagen_url: optimized.previewUrl,
+              imagen_url: (v.imagen_url && !v.imagen_url.startsWith('blob:')) ? v.imagen_url : '',
               isOptimizing: false,
               compressionStats: {
                 originalSize: optimized.originalSize,
@@ -525,9 +529,10 @@ export default function ProductFormModal({ product, onClose, onSaveSuccess, addT
         colores: sortedVariants.map((v) => v.color.trim()).filter(Boolean),
         variantes: sortedVariants.map((v) => ({
           ...v,
+          imagen_url: (v.imagen_url && !v.imagen_url.startsWith('blob:')) ? v.imagen_url : '',
           tallas: Array.isArray(v.tallas) && v.tallas.length > 0 ? v.tallas : (unionSizes.length > 0 ? unionSizes : ['S', 'M', 'L'])
         })),
-        imagen_url: coverPreview || ''
+        imagen_url: (coverUrlInput.trim() || (coverPreview && !coverPreview.startsWith('blob:') ? coverPreview : ''))
       };
 
       let result;

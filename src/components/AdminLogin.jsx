@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { adminLogin, isSupabaseConfigured, STORE_NAME } from '../lib/supabase';
-import { Lock, Mail, ArrowLeft, ShieldCheck, Eye, EyeOff, Sparkles, KeyRound } from 'lucide-react';
+import { Lock, Mail, ArrowLeft, ShieldCheck, Eye, EyeOff, KeyRound } from 'lucide-react';
 
 export default function AdminLogin({ onLoginSuccess, onBackToCatalog, addToast }) {
   const [email, setEmail] = useState('');

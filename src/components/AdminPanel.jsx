@@ -1,5 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { adminLogout, toggleProductAvailability, isSupabaseConfigured, STORE_NAME } from '../lib/supabase';
+import { 
+  adminLogout, toggleProductAvailability, isSupabaseConfigured, STORE_NAME,
+  getSafeProductImageUrl, DEFAULT_PRODUCT_IMAGE, resetLocalProducts 
+} from '../lib/supabase';
 import ScrollToTop from './ScrollToTop';
 import { 
   Plus, LogOut, Search, Edit3, Trash2, CheckCircle2, 
@@ -248,6 +251,36 @@ export default function AdminPanel({
                 Las prendas se guardan en el navegador. Para conectar PostgreSQL y Storage de Supabase en vivo, añade tus credenciales en el archivo <code>.env</code>.
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('¿Deseas restablecer las prendas iniciales de demostración con todas sus fotografías originales?')) {
+                  resetLocalProducts();
+                  if (onReloadProducts) onReloadProducts();
+                  addToast({
+                    type: 'success',
+                    title: 'Datos restablecidos',
+                    message: 'Se cargaron los 6 modelos iniciales de demostración con sus imágenes originales.'
+                  });
+                }
+              }}
+              className="btn btn-outline"
+              style={{
+                fontSize: '0.78rem',
+                padding: '0.45rem 0.85rem',
+                background: 'var(--color-white)',
+                borderColor: 'var(--gold-primary)',
+                color: 'var(--gold-dark)',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+            >
+              <RefreshCw size={13} />
+              <span>Restablecer Prendas de Demo</span>
+            </button>
           </div>
         )}
 
@@ -467,8 +500,12 @@ export default function AdminPanel({
                             border: '1px solid var(--color-sand)'
                           }}>
                             <img
-                              src={p.imagen_url || 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=200&q=80'}
+                              src={getSafeProductImageUrl(p.imagen_url)}
                               alt={p.nombre}
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = DEFAULT_PRODUCT_IMAGE;
+                              }}
                               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                             />
                           </div>
